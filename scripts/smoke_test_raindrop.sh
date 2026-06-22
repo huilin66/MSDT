@@ -23,6 +23,8 @@ SCENE_TRAIN_PATH=${SCENE_TRAIN_PATH:-${DATA_PATH}/Drop_scen_pred.json}
 OUT_ROOT=${OUT_ROOT:-run/msdt_1x5090_smoke}
 
 NUM_WORKERS=${NUM_WORKERS:-2}
+BATCH_SIZE=${BATCH_SIZE:-1}
+LR=${LR:-0.0001}
 EPOCHS=${EPOCHS:-2}
 MAX_TRAIN_STEPS=${MAX_TRAIN_STEPS:-1}
 MAX_VAL_IMAGES=${MAX_VAL_IMAGES:-1}
@@ -43,7 +45,7 @@ run_smoke() {
   local name="$1"
   local config="$2"
   local use_scene="$3"
-  local output_dir="${OUT_ROOT}/${name}"
+  local output_dir="${OUT_ROOT}/${name}_b${BATCH_SIZE}"
   local scene_args=()
 
   if [[ "${use_scene}" == "1" ]]; then
@@ -52,7 +54,8 @@ run_smoke() {
 
   echo "============================================================"
   echo "[Smoke] ${name}: use_scene_condition=${use_scene}"
-  echo "epochs=${EPOCHS}, train_steps=${MAX_TRAIN_STEPS}, val_images=${MAX_VAL_IMAGES}"
+  echo "batch=${BATCH_SIZE}, lr=${LR}, epochs=${EPOCHS}"
+  echo "train_steps=${MAX_TRAIN_STEPS}, val_images=${MAX_VAL_IMAGES}"
   echo "Output: ${output_dir}"
   echo "============================================================"
 
@@ -63,6 +66,8 @@ run_smoke() {
     --device cuda:0 \
     --epochs "${EPOCHS}" \
     --num-workers "${NUM_WORKERS}" \
+    --batch-size "${BATCH_SIZE}" \
+    --lr "${LR}" \
     --max-train-steps "${MAX_TRAIN_STEPS}" \
     --max-val-images "${MAX_VAL_IMAGES}" \
     "${scene_args[@]}"

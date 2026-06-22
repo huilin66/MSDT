@@ -38,7 +38,14 @@ def parse_args():
     parser.add_argument("--resume", help="Resume a complete training checkpoint")
     parser.add_argument("--device", help="e.g. cuda, cuda:1, or cpu")
     parser.add_argument("--epochs", type=int, help="Override epochs (primarily for smoke tests)")
+    parser.add_argument(
+        "--stop-after-epoch",
+        type=int,
+        help="Stop this invocation early while preserving the full cosine schedule",
+    )
     parser.add_argument("--num-workers", type=int, help="Override DataLoader workers")
+    parser.add_argument("--batch-size", type=int, help="Override training batch size")
+    parser.add_argument("--lr", type=float, help="Override Adam learning rate")
     parser.add_argument("--max-train-steps", type=int, help="Limit train steps per epoch for smoke tests")
     parser.add_argument("--max-val-images", type=int, help="Limit validation images for smoke tests")
     return parser.parse_args()
@@ -80,6 +87,14 @@ def main():
         if args.num_workers < 0:
             raise ValueError("--num-workers must be >= 0")
         config["data"]["num_workers"] = args.num_workers
+    if args.batch_size is not None:
+        if args.batch_size <= 0:
+            raise ValueError("--batch-size must be > 0")
+        config["training"]["batch_size"] = args.batch_size
+    if args.lr is not None:
+        if args.lr <= 0:
+            raise ValueError("--lr must be > 0")
+        config["optimizer"]["lr"] = args.lr
     if args.max_train_steps is not None and args.max_train_steps <= 0:
         raise ValueError("--max-train-steps must be > 0")
     if args.max_val_images is not None and args.max_val_images <= 0:
@@ -127,6 +142,11 @@ def main():
         weight_decay=float(optimizer_config.get("weight_decay", 0.0)),
     )
     epochs = int(config["training"].get("epochs", 200))
+    stop_after_epoch = args.stop_after_epoch if args.stop_after_epoch is not None else epochs
+    if stop_after_epoch <= 0 or stop_after_epoch > epochs:
+        raise ValueError(
+            f"--stop-after-epoch must be in [1, {epochs}], got {stop_after_epoch}"
+        )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=epochs, eta_min=float(optimizer_config.get("min_lr", 1e-6))
     )
@@ -175,7 +195,16 @@ def main():
                 torch.cuda.set_rng_state_all(rng["cuda"])
         print(f"Resumed {args.resume} at epoch {start_epoch}")
 
-    for epoch in range(start_epoch, epochs + 1):
+    if start_epoch > stop_after_epoch:
+        raise ValueError(
+            f"Checkpoint starts at epoch {start_epoch}, after requested stop epoch {stop_after_epoch}"
+        )
+
+    print(
+        f"Training epochs {start_epoch}..{stop_after_epoch}; "
+        f"cosine schedule remains configured for {epochs} total epochs"
+    )
+    for epoch in range(start_epoch, stop_after_epoch + 1):
         model.train()
         epoch_loss = 0.0
         train_steps = 0

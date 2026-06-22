@@ -191,9 +191,41 @@ SCENE_TRAIN_PATH=/path/to/Drop_scen_pred.json \
 bash scripts/train_scene_ablation.sh
 ```
 
+For a result in roughly 1–2 days at one hour per epoch, run one model to epoch 36
+while retaining the intended 200-epoch cosine schedule:
+
+```bash
+RUN_MODE=no_scene TOTAL_EPOCHS=200 STOP_AFTER_EPOCH=36 \
+DATA_PATH=/path/to/DATA_ROOT \
+SCENE_TRAIN_PATH=/path/to/Drop_scen_pred.json \
+bash scripts/train_scene_ablation.sh
+```
+
+Continue later without restarting the scheduler:
+
+```bash
+RUN_MODE=no_scene TOTAL_EPOCHS=200 STOP_AFTER_EPOCH=72 \
+NO_SCENE_RESUME=checkpoints/msdt_1x5090/no_scene/model_latest.pth \
+DATA_PATH=/path/to/DATA_ROOT \
+SCENE_TRAIN_PATH=/path/to/Drop_scen_pred.json \
+bash scripts/train_scene_ablation.sh
+```
+
 The smoke launcher runs both models end to end for two epochs, limiting each epoch
 to one train step and one validation image. It verifies a finite non-zero gradient,
 an actual optimizer parameter update, and the creation of `model_latest.pth`.
+
+To find the fastest batch that fits a 32GB RTX 5090, run memory smoke tests in
+ascending order. Keep the same chosen batch and LR for both ablation models:
+
+```bash
+BATCH_SIZE=2 EPOCHS=1 bash scripts/smoke_test_raindrop.sh
+BATCH_SIZE=4 EPOCHS=1 bash scripts/smoke_test_raindrop.sh
+BATCH_SIZE=8 EPOCHS=1 bash scripts/smoke_test_raindrop.sh
+```
+
+Start with `LR=0.0001`; only increase it after confirming stable losses. The default
+remains the official `BATCH_SIZE=1` protocol.
 The synthetic CPU-capable suite remains available as
 `python tests/smoke_test_raindrop.py --device cpu`.
 
