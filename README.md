@@ -165,8 +165,20 @@ size. Inference saves only `output[0]` as lossless PNG without TTA or ensembling
 ```bash
 bash scripts/train_scene_ablation.sh /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
 bash scripts/eval_scene_ablation.sh /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
-python tests/smoke_test_raindrop.py
+bash scripts/smoke_test_raindrop.sh
 ```
+
+`train_scene_ablation.sh` is the unified single-RTX-5090 launcher. It exposes
+one GPU, uses `cuda:0`, AMP from both configs, batch size 1, and defaults to four
+DataLoader workers. Override the physical card or worker count without editing it:
+
+```bash
+GPU_ID=0 NUM_WORKERS=8 bash scripts/train_scene_ablation.sh \
+  /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
+```
+
+`smoke_test_raindrop.sh` likewise exposes one GPU and runs on `cuda:0` by default.
+For a CPU-only diagnostic fallback, use `DEVICE=cpu bash scripts/smoke_test_raindrop.sh`.
 
 Evaluation writes `scene_ablation.csv` and `scene_ablation.md`, including the raw
 `MSDT + Scene - MSDT baseline` metric deltas. These experiments are baselines and a
