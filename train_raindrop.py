@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument("--resume", help="Resume a complete training checkpoint")
     parser.add_argument("--device", help="e.g. cuda, cuda:1, or cpu")
     parser.add_argument("--epochs", type=int, help="Override epochs (primarily for smoke tests)")
+    parser.add_argument("--num-workers", type=int, help="Override DataLoader workers")
     return parser.parse_args()
 
 
@@ -72,6 +73,10 @@ def main():
     config = load_config(args.config)
     if args.epochs is not None:
         config["training"]["epochs"] = args.epochs
+    if args.num_workers is not None:
+        if args.num_workers < 0:
+            raise ValueError("--num-workers must be >= 0")
+        config["data"]["num_workers"] = args.num_workers
     seed = int(config["training"].get("seed", 1234))
     set_seed(seed)
     device = resolve_device(args.device)
@@ -93,7 +98,13 @@ def main():
         generator=generator,
         drop_last=False,
     )
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=workers)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=workers,
+        pin_memory=device.type == "cuda",
+    )
 
     model = build_model(config).to(device)
     optimizer_config = config["optimizer"]
@@ -188,4 +199,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

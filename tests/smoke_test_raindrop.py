@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import tempfile
@@ -76,13 +77,13 @@ def make_raw(root: Path):
         write_image(base / "Blur" / scene / name, blur_value)
 
 
-def one_backward(use_scene: bool, item):
-    model = MSDT(num_res=1, use_scene_condition=use_scene)
-    image = item["input"].unsqueeze(0)
-    target = item["target"].unsqueeze(0)
+def one_backward(use_scene: bool, item, device: torch.device):
+    model = MSDT(num_res=1, use_scene_condition=use_scene).to(device)
+    image = item["input"].unsqueeze(0).to(device)
+    target = item["target"].unsqueeze(0).to(device)
     scene = item.get("scene_id")
     if scene is not None:
-        scene = scene.view(1)
+        scene = scene.view(1).to(device)
     outputs = model(image, scene_id=scene) if use_scene else model(image)
     validate_outputs(outputs, image)
     assert [tuple(value.shape[-2:]) for value in outputs] == [(16, 16), (8, 8), (4, 4)]
@@ -93,7 +94,15 @@ def one_backward(use_scene: bool, item):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--device", default="cpu", help="cpu, cuda, or cuda:0")
+    args = parser.parse_args()
+    device = torch.device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError(f"CUDA smoke test requested but CUDA is unavailable: {args.device}")
     torch.manual_seed(1234)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(1234)
     with tempfile.TemporaryDirectory(prefix="msdt_smoke_") as temporary:
         root = Path(temporary)
         flat, raw = root / "flat", root / "raw"
@@ -118,16 +127,16 @@ def main():
 
         no_train = RaindropClarityDataset(no_scene, split["train"], True, 16, False)
         scene_train = RaindropClarityDataset(scene, split["train"], True, 16, True)
-        no_loss = one_backward(False, no_train[0])
-        scene_loss = one_backward(True, scene_train[0])
+        no_loss = one_backward(False, no_train[0], device)
+        scene_loss = one_backward(True, scene_train[0], device)
 
-        base_model = MSDT(num_res=0, use_scene_condition=False)
-        scene_model = MSDT(num_res=0, use_scene_condition=True)
+        base_model = MSDT(num_res=0, use_scene_condition=False).to(device)
+        scene_model = MSDT(num_res=0, use_scene_condition=True).to(device)
         incompatible = scene_model.load_state_dict(base_model.state_dict(), strict=False)
         assert not incompatible.unexpected_keys
         assert all(key.startswith("scene_conditioner.") for key in incompatible.missing_keys)
-        all_ids = torch.tensor([0, 1, 2, 3])
-        fixed_input = torch.rand(4, 3, 16, 16)
+        all_ids = torch.tensor([0, 1, 2, 3], device=device)
+        fixed_input = torch.rand(4, 3, 16, 16, device=device)
         base_outputs = base_model(fixed_input)
         four_outputs = scene_model(fixed_input, scene_id=all_ids)
         assert four_outputs[0].shape == (4, 3, 16, 16)
@@ -135,7 +144,7 @@ def main():
         assert torch.count_nonzero(scene_model.scene_conditioner.mlp[-1].weight) == 0
         assert torch.count_nonzero(scene_model.scene_conditioner.mlp[-1].bias) == 0
 
-        metric = ValidationMetrics(torch.device("cpu"))
+        metric = ValidationMetrics(device)
         validation_results = {}
         inference_results = {}
         for mode, samples, train_dataset in (
@@ -144,12 +153,12 @@ def main():
         ):
             use_scene = mode == "scene"
             val = RaindropClarityDataset(samples, split["val"], False, 16, use_scene)
-            model = MSDT(num_res=0, use_scene_condition=use_scene).eval()
+            model = MSDT(num_res=0, use_scene_condition=use_scene).to(device).eval()
             validation_results[mode] = validate_model(
-                model, DataLoader(val, batch_size=1), metric, torch.device("cpu"), use_scene
+                model, DataLoader(val, batch_size=1), metric, device, use_scene
             )
-            odd = torch.rand(1, 3, 65, 67)
-            sid = torch.tensor([3]) if use_scene else None
+            odd = torch.rand(1, 3, 65, 67, device=device)
+            sid = torch.tensor([3], device=device) if use_scene else None
             restored = infer_image(model, odd, sid, tile_size=32, tile_overlap=8)
             assert restored.shape == odd.shape
             output = root / f"{mode}_input.png"
@@ -160,6 +169,8 @@ def main():
 
         result = {
             "status": "passed",
+            "device": str(device),
+            "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
             "flat_pairs": len(scene),
             "raw_pairs": len(raw_scene),
             "scene_coverage": scene_coverage(scene),
