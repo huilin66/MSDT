@@ -1,0 +1,13 @@
+*.csv
+*.json
+*.pth
+*.log
+*.png
+*.pyc
+
+__pycache__/
+.idea/
+run/
+ckpt/
+checkpoints/
+log/
