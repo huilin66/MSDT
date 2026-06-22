@@ -163,22 +163,35 @@ size. Inference saves only `output[0]` as lossless PNG without TTA or ensembling
 ### Fair ablation and smoke test
 
 ```bash
-bash scripts/train_scene_ablation.sh /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
-bash scripts/eval_scene_ablation.sh /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
+DATA_PATH=/path/to/DATA_ROOT \
+SCENE_TRAIN_PATH=/path/to/Drop_scen_pred.json \
+bash scripts/train_scene_ablation.sh
+
+DATA_PATH=/path/to/DATA_ROOT \
+SCENE_TRAIN_PATH=/path/to/Drop_scen_pred.json \
 bash scripts/smoke_test_raindrop.sh
+
+DATA_PATH=/path/to/DATA_ROOT \
+SCENE_VAL_PATH=/path/to/Drop_scen_pred.json \
+bash scripts/eval_scene_ablation.sh
 ```
 
-`train_scene_ablation.sh` is the unified single-RTX-5090 launcher. It exposes
-one GPU, uses `cuda:0`, AMP from both configs, batch size 1, and defaults to four
-DataLoader workers. Override the physical card or worker count without editing it:
+The launchers follow the JiT single-RTX-5090 convention: environment-variable
+configuration, CUDA/BF16 preflight, input/checkpoint validation, sequential ablation
+runs, and explicit output checks. Training uses `cuda:0`, AMP, batch size 1, 200
+epochs, and eight DataLoader workers by default. Override settings without editing:
 
 ```bash
-GPU_ID=0 NUM_WORKERS=8 bash scripts/train_scene_ablation.sh \
-  /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
+GPU=0 EPOCHS=200 NUM_WORKERS=8 OUT_ROOT=/path/to/checkpoints \
+DATA_PATH=/path/to/DATA_ROOT \
+SCENE_TRAIN_PATH=/path/to/Drop_scen_pred.json \
+bash scripts/train_scene_ablation.sh
 ```
 
-`smoke_test_raindrop.sh` likewise exposes one GPU and runs on `cuda:0` by default.
-For a CPU-only diagnostic fallback, use `DEVICE=cpu bash scripts/smoke_test_raindrop.sh`.
+The smoke launcher runs both models end to end for two epochs, limiting each epoch
+to one train step and one validation image, then requires `model_latest.pth` to exist.
+The synthetic CPU-capable suite remains available as
+`python tests/smoke_test_raindrop.py --device cpu`.
 
 Evaluation writes `scene_ablation.csv` and `scene_ablation.md`, including the raw
 `MSDT + Scene - MSDT baseline` metric deltas. These experiments are baselines and a

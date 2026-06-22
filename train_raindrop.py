@@ -38,6 +38,8 @@ def parse_args():
     parser.add_argument("--device", help="e.g. cuda, cuda:1, or cpu")
     parser.add_argument("--epochs", type=int, help="Override epochs (primarily for smoke tests)")
     parser.add_argument("--num-workers", type=int, help="Override DataLoader workers")
+    parser.add_argument("--max-train-steps", type=int, help="Limit train steps per epoch for smoke tests")
+    parser.add_argument("--max-val-images", type=int, help="Limit validation images for smoke tests")
     return parser.parse_args()
 
 
@@ -77,6 +79,10 @@ def main():
         if args.num_workers < 0:
             raise ValueError("--num-workers must be >= 0")
         config["data"]["num_workers"] = args.num_workers
+    if args.max_train_steps is not None and args.max_train_steps <= 0:
+        raise ValueError("--max-train-steps must be > 0")
+    if args.max_val_images is not None and args.max_val_images <= 0:
+        raise ValueError("--max-val-images must be > 0")
     seed = int(config["training"].get("seed", 1234))
     set_seed(seed)
     device = resolve_device(args.device)
@@ -85,6 +91,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     train_dataset, val_dataset, data_info = prepare_datasets(config, args.data_root, args.scene_json)
+    if args.max_val_images is not None:
+        val_dataset = torch.utils.data.Subset(
+            val_dataset, range(min(args.max_val_images, len(val_dataset)))
+        )
     print(json.dumps({"device": str(device), **data_info}, ensure_ascii=False))
     generator = torch.Generator().manual_seed(seed)
     workers = int(config["data"].get("num_workers", 0))
@@ -151,6 +161,7 @@ def main():
     for epoch in range(start_epoch, epochs + 1):
         model.train()
         epoch_loss = 0.0
+        train_steps = 0
         started = time.time()
         for batch in tqdm(train_loader, desc=f"train {epoch}/{epochs}"):
             target = batch["target"].to(device, non_blocking=True)
@@ -167,6 +178,9 @@ def main():
             scaler.step(optimizer)
             scaler.update()
             epoch_loss += float(loss.detach().cpu())
+            train_steps += 1
+            if args.max_train_steps is not None and train_steps >= args.max_train_steps:
+                break
 
         validation = validate_model(
             model,
@@ -180,7 +194,7 @@ def main():
         scheduler.step()
         row = {
             "epoch": epoch,
-            "loss": epoch_loss / len(train_loader),
+            "loss": epoch_loss / train_steps,
             "lr": optimizer.param_groups[0]["lr"],
             **validation,
         }
