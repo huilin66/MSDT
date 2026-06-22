@@ -130,7 +130,23 @@ def main():
         optimizer, T_max=epochs, eta_min=float(optimizer_config.get("min_lr", 1e-6))
     )
     amp_enabled = bool(config["training"].get("amp", True)) and device.type == "cuda"
-    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
+    amp_dtype_name = str(config["training"].get("amp_dtype", "float16")).lower()
+    amp_dtypes = {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+    }
+    if amp_dtype_name not in amp_dtypes:
+        raise ValueError(f"training.amp_dtype must be float16 or bfloat16, got {amp_dtype_name!r}")
+    amp_dtype = amp_dtypes[amp_dtype_name]
+    if amp_enabled and amp_dtype == torch.bfloat16 and not torch.cuda.is_bf16_supported():
+        raise RuntimeError("BF16 AMP was requested but the selected CUDA device does not support BF16")
+    # BF16 has FP32-like exponent range and does not need gradient scaling.
+    scaler = torch.amp.GradScaler(
+        "cuda", enabled=amp_enabled and amp_dtype == torch.float16
+    )
+    print(f"AMP enabled={amp_enabled}, dtype={amp_dtype_name}, grad_scaler={scaler.is_enabled()}")
     criterion = MultiScaleMSDTLoss(
         fft_weight=float(config["loss"].get("fft_weight", 0.01)),
         edge_weight=float(config["loss"].get("edge_weight", 0.05)),
@@ -168,7 +184,9 @@ def main():
             image = batch["input"].to(device, non_blocking=True)
             scene_id = batch["scene_id"].to(device) if use_scene else None
             optimizer.zero_grad(set_to_none=True)
-            with torch.amp.autocast(device_type=device.type, enabled=amp_enabled):
+            with torch.amp.autocast(
+                device_type=device.type, dtype=amp_dtype, enabled=amp_enabled
+            ):
                 outputs = model(image, scene_id=scene_id) if use_scene else model(image)
                 validate_outputs(outputs, image)
                 loss, _ = criterion(outputs, target)

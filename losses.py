@@ -44,6 +44,8 @@ class fftLoss(nn.Module):
         super(fftLoss, self).__init__()
 
     def forward(self, x, y):
-        diff = torch.fft.fft2(x) - torch.fft.fft2(y)
-        loss = torch.mean(abs(diff))
+        # Avoid unsupported/unstable ComplexHalf FFT under CUDA autocast.
+        with torch.amp.autocast(device_type=x.device.type, enabled=False):
+            diff = torch.fft.fft2(x.float()) - torch.fft.fft2(y.float())
+            loss = torch.mean(abs(diff))
         return loss

@@ -181,6 +181,9 @@ configuration, CUDA/BF16 preflight, input/checkpoint validation, sequential abla
 runs, and explicit output checks. Training uses `cuda:0`, AMP, batch size 1, 200
 epochs, and eight DataLoader workers by default. Override settings without editing:
 
+On RTX 5090 the supplied configs use BF16 AMP. MSDT's internal FFT branches and
+FFT loss remain in FP32 to avoid unsupported ComplexHalf FFT and first-step NaNs.
+
 ```bash
 GPU=0 EPOCHS=200 NUM_WORKERS=8 OUT_ROOT=/path/to/checkpoints \
 DATA_PATH=/path/to/DATA_ROOT \

@@ -139,14 +139,18 @@ class ResBlock_do_FECB_bench(nn.Module):
     def forward(self, x):
         _, _, H, W = x.shape
         dim = 1
-        y = torch.fft.rfft2(x, norm=self.norm)
-        y_imag = y.imag
-        y_real = y.real
-        y_f = torch.cat([y_real, y_imag], dim=dim)
-        y = self.main_fft(y_f)
-        y_real, y_imag = torch.chunk(y, 2, dim=dim)
-        y = torch.complex(y_real, y_imag)
-        y = torch.fft.irfft2(y, s=(H, W), norm=self.norm)
+        # CUDA FFT in FP16 creates ComplexHalf values and is numerically unstable.
+        # Keep only the frequency branch in FP32; the spatial branch still uses AMP.
+        with torch.amp.autocast(device_type=x.device.type, enabled=False):
+            y = torch.fft.rfft2(x.float(), norm=self.norm)
+            y_imag = y.imag
+            y_real = y.real
+            y_f = torch.cat([y_real, y_imag], dim=dim)
+            y = self.main_fft(y_f)
+            y_real, y_imag = torch.chunk(y, 2, dim=dim)
+            y = torch.complex(y_real, y_imag)
+            y = torch.fft.irfft2(y, s=(H, W), norm=self.norm)
+        y = y.to(dtype=x.dtype)
         return self.main(x) + x + y
 
 class ResBlock_FECB_bench(nn.Module):
@@ -165,14 +169,16 @@ class ResBlock_FECB_bench(nn.Module):
     def forward(self, x):
         _, _, H, W = x.shape
         dim = 1
-        y = torch.fft.rfft2(x, norm=self.norm)
-        y_imag = y.imag
-        y_real = y.real
-        y_f = torch.cat([y_real, y_imag], dim=dim)
-        y = self.main_fft(y_f)
-        y_real, y_imag = torch.chunk(y, 2, dim=dim)
-        y = torch.complex(y_real, y_imag)
-        y = torch.fft.irfft2(y, s=(H, W), norm=self.norm)
+        with torch.amp.autocast(device_type=x.device.type, enabled=False):
+            y = torch.fft.rfft2(x.float(), norm=self.norm)
+            y_imag = y.imag
+            y_real = y.real
+            y_f = torch.cat([y_real, y_imag], dim=dim)
+            y = self.main_fft(y_f)
+            y_real, y_imag = torch.chunk(y, 2, dim=dim)
+            y = torch.complex(y_real, y_imag)
+            y = torch.fft.irfft2(y, s=(H, W), norm=self.norm)
+        y = y.to(dtype=x.dtype)
         return self.main(x) + x + y
 class ResBlock_do_FECB_bench_eval(nn.Module):
     def __init__(self, out_channel, norm='backward'):
@@ -190,14 +196,16 @@ class ResBlock_do_FECB_bench_eval(nn.Module):
     def forward(self, x):
         _, _, H, W = x.shape
         dim = 1
-        y = torch.fft.rfft2(x, norm=self.norm)
-        y_imag = y.imag
-        y_real = y.real
-        y_f = torch.cat([y_real, y_imag], dim=dim)
-        y = self.main_fft(y_f)
-        y_real, y_imag = torch.chunk(y, 2, dim=dim)
-        y = torch.complex(y_real, y_imag)
-        y = torch.fft.irfft2(y, s=(H, W), norm=self.norm)
+        with torch.amp.autocast(device_type=x.device.type, enabled=False):
+            y = torch.fft.rfft2(x.float(), norm=self.norm)
+            y_imag = y.imag
+            y_real = y.real
+            y_f = torch.cat([y_real, y_imag], dim=dim)
+            y = self.main_fft(y_f)
+            y_real, y_imag = torch.chunk(y, 2, dim=dim)
+            y = torch.complex(y_real, y_imag)
+            y = torch.fft.irfft2(y, s=(H, W), norm=self.norm)
+        y = y.to(dtype=x.dtype)
         return self.main(x) + x + y
 
 def window_partitions(x, window_size):
