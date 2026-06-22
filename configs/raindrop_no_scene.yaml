@@ -1,0 +1,42 @@
+experiment:
+  name: MSDT baseline
+  use_scene_condition: false
+  output_dir: checkpoints/raindrop_no_scene
+
+data:
+  root: data/RaindropClarity
+  format: auto
+  scene_json: null
+  split_manifest: splits/raindrop_split.json
+  group_regex: '(?i)^(day|night)(?:raindrop)?(?:__|[_-])(\d+)'
+  val_ratio: 0.1
+  patch_size: 256
+  num_workers: 0
+
+model:
+  num_res: 8
+  scene_embedding_dim: 32
+
+training:
+  epochs: 200
+  batch_size: 1
+  seed: 1234
+  amp: true
+
+optimizer:
+  name: Adam
+  lr: 0.0001
+  min_lr: 0.000001
+  betas: [0.9, 0.999]
+  eps: 0.00000001
+  weight_decay: 0.0
+
+loss:
+  fft_weight: 0.01
+  edge_weight: 0.05
+
+inference:
+  tile_size: 0
+  validation_tile_size: 0
+  tile_overlap: 32
+

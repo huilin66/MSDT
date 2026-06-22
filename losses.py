@@ -10,7 +10,7 @@ class CharbonnierLoss(nn.Module):
         self.eps = eps
 
     def forward(self, x, y):
-        diff = x.to('cuda:0') - y.to('cuda:0')
+        diff = x - y
         loss = torch.mean(torch.sqrt((diff * diff) + (self.eps*self.eps)))
         return loss
 
@@ -18,9 +18,7 @@ class EdgeLoss(nn.Module):
     def __init__(self):
         super(EdgeLoss, self).__init__()
         k = torch.Tensor([[.05, .25, .4, .25, .05]])
-        self.kernel = torch.matmul(k.t(),k).unsqueeze(0).repeat(3,1,1,1)
-        if torch.cuda.is_available():
-            self.kernel = self.kernel.to('cuda:0')
+        self.register_buffer('kernel', torch.matmul(k.t(),k).unsqueeze(0).repeat(3,1,1,1))
         self.loss = CharbonnierLoss()
 
     def conv_gauss(self, img):
@@ -38,7 +36,7 @@ class EdgeLoss(nn.Module):
         return diff
 
     def forward(self, x, y):
-        loss = self.loss(self.laplacian_kernel(x.to('cuda:0')), self.laplacian_kernel(y.to('cuda:0')))
+        loss = self.loss(self.laplacian_kernel(x), self.laplacian_kernel(y))
         return loss
 
 class fftLoss(nn.Module):
@@ -46,6 +44,6 @@ class fftLoss(nn.Module):
         super(fftLoss, self).__init__()
 
     def forward(self, x, y):
-        diff = torch.fft.fft2(x.to('cuda:0')) - torch.fft.fft2(y.to('cuda:0'))
+        diff = torch.fft.fft2(x) - torch.fft.fft2(y)
         loss = torch.mean(abs(diff))
         return loss

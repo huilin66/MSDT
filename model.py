@@ -237,10 +237,44 @@ class FAM(nn.Module):
         out = x1 + self.merge(x)
         return out
 
+class SceneConditioner(nn.Module):
+    """Lightweight four-class FiLM conditioner for the shared bottleneck."""
+    def __init__(self, channels, embedding_dim=32, num_scenes=4):
+        super(SceneConditioner, self).__init__()
+        self.num_scenes = num_scenes
+        self.embedding = nn.Embedding(num_scenes, embedding_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.GELU(),
+            nn.Linear(embedding_dim, channels * 2),
+        )
+        # Scene conditioning starts as an exact identity mapping.
+        nn.init.zeros_(self.mlp[-1].weight)
+        nn.init.zeros_(self.mlp[-1].bias)
+
+    def forward(self, feature, scene_id):
+        if scene_id is None:
+            raise ValueError("scene_id is required when use_scene_condition=True")
+        scene_id = torch.as_tensor(scene_id, device=feature.device, dtype=torch.long).view(-1)
+        if scene_id.numel() != feature.shape[0]:
+            raise ValueError(
+                "scene_id batch size {} does not match image batch size {}".format(
+                    scene_id.numel(), feature.shape[0]
+                )
+            )
+        if torch.any((scene_id < 0) | (scene_id >= self.num_scenes)):
+            raise ValueError("scene_id must contain integers in [0, 3]")
+        scale, shift = self.mlp(self.embedding(scene_id)).chunk(2, dim=1)
+        scale = scale[:, :, None, None]
+        shift = shift[:, :, None, None]
+        return feature * (1 + scale) + shift
+
 class MSDT(nn.Module):
-    def __init__(self, num_res=8, inference=False):
+    def __init__(self, num_res=8, inference=False, use_scene_condition=False,
+                 scene_embedding_dim=32):
         super(MSDT, self).__init__()
         self.inference = inference
+        self.use_scene_condition = use_scene_condition
         if not inference:
             BasicConv = BasicConv_do
             ResBlock = ResBlock_do_FECB_bench
@@ -310,7 +344,12 @@ class MSDT(nn.Module):
         self.up_2 = Upsample(128)
         self.up_3 = Upsample(64)
 
-    def forward(self, x):
+        if self.use_scene_condition:
+            self.scene_conditioner = SceneConditioner(
+                base_channel * 4, embedding_dim=scene_embedding_dim, num_scenes=4
+            )
+
+    def forward(self, x, scene_id=None):
         x_2 = F.interpolate(x, scale_factor=0.5)
         x_4 = F.interpolate(x_2, scale_factor=0.5)
         z2 = self.SCM2(x_2)
@@ -331,6 +370,8 @@ class MSDT(nn.Module):
         z = self.FAM1(z, z4)
 
         z = self.Encoder[2](z)
+        if self.use_scene_condition:
+            z = self.scene_conditioner(z, scene_id)
 
         z21 = self.up_1(res2)
         z42 = self.up_2(z)

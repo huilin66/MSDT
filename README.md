@@ -58,6 +58,120 @@ PSNR and SSIM results are computed by using this [Matlab Code](https://github.co
 ## 👍 Acknowledgement
 Thanks for their awesome works ([DeepRFT](https://github.com/INVOKERer/DeepRFT) and [DRSformer](https://github.com/cschenxiang/DRSformer)).
 
+## RaindropClarity single-model baselines
+
+This repository also provides two fair, independent single-MSDT experiments:
+
+- `MSDT baseline`: the original MSDT parameter path; scene labels are neither loaded nor used.
+- `MSDT + Scene`: the same MSDT with a zero-initialized four-class FiLM module at the shared 1/4-resolution bottleneck.
+
+Both supplied configs share the split manifest, seed, augmentations, loss, optimizer,
+scheduler, batch size, and epoch count. No pseudo-GT, ensemble, TTA, scene classifier,
+test-time tuning, or unrelated pretrained deraining weights are used.
+
+Install the additional metric/config dependencies:
+
+```bash
+pip install -r requirements-raindrop.txt
+```
+
+### Data layouts and split
+
+Flat paired data use exact filename matching (not sorted positional matching):
+
+```text
+DATA_ROOT/
+  Drop/Day_00001_xxx.png
+  Clear/Day_00001_xxx.png
+  Drop_scen_pred.json
+```
+
+The original release is also detected, including a combined day/night parent:
+
+```text
+DATA_ROOT/
+  DayRainDrop/{Drop,Blur,Clear}/00001/frame.png
+  NightRainDrop/{Drop,Blur,Clear}/00001/frame.png
+```
+
+For the official raw release, each `Drop/<scene>/<frame>` is one raindrop-removal
+input and its same-relative-path `Clear` image is the GT. `Blur` is the auxiliary
+raindrop-free blurry background, not a second rainy input. Following the dataset
+authors' code, `Blur == Clear` identifies a background-focused pair; otherwise the
+item is a raindrop-focused triplet. Every frame inside each scene/triplet directory
+is expanded into an MSDT sample. Treating `Blur -> Clear` as another deraining sample
+would change the task into extra deblurring training, so it is deliberately excluded.
+
+Flat names are grouped by the default `Day_00001`/`Night_00001` prefix. Change
+`data.group_regex` if local names use another convention. Raw data are grouped by
+their scene directory. The first run creates `splits/raindrop_split.json`; later runs
+reuse it and fail if its groups no longer match, preventing scene leakage.
+
+### Train, validate, and resume
+
+```bash
+# A: no scene labels
+python train_raindrop.py --config configs/raindrop_no_scene.yaml --data-root /path/to/DATA_ROOT
+
+# B: four-class scene conditioning
+python train_raindrop.py --config configs/raindrop_scene.yaml --data-root /path/to/DATA_ROOT \
+  --scene-json /path/to/DATA_ROOT/Drop_scen_pred.json
+
+# Resume all model/optimizer/scheduler/scaler state
+python train_raindrop.py --config configs/raindrop_scene.yaml --data-root /path/to/DATA_ROOT \
+  --scene-json /path/to/DATA_ROOT/Drop_scen_pred.json \
+  --resume checkpoints/raindrop_scene/model_latest.pth
+
+# Standalone fixed-split validation
+python eval_raindrop.py --config configs/raindrop_no_scene.yaml \
+  --weights checkpoints/raindrop_no_scene/model_best.pth --data-root /path/to/DATA_ROOT
+```
+
+Validation reports `PSNR_Y`, `SSIM_Y`, AlexNet `LPIPS`, and
+`Score = PSNR_Y + 10*SSIM_Y - 5*LPIPS`. Only `model_best.pth` and
+`model_latest.pth` are maintained.
+
+### Inference
+
+```bash
+# One image, no-scene model
+python infer_raindrop.py --config configs/raindrop_no_scene.yaml \
+  --weights checkpoints/raindrop_no_scene/model_best.pth \
+  --input image.png --output-dir results/no_scene
+
+# One image with a manual scene ID
+python infer_raindrop.py --config configs/raindrop_scene.yaml \
+  --weights checkpoints/raindrop_scene/model_best.pth \
+  --input image.png --scene-id 3 --output-dir results/scene
+
+# Folder labels by exact filename, with overlap-tile inference
+python infer_raindrop.py --config configs/raindrop_scene.yaml \
+  --weights checkpoints/raindrop_scene/model_best.pth \
+  --input /path/to/images --scene-json labels.json --output-dir results/scene \
+  --tile-size 512 --tile-overlap 64
+
+# Fixed validation split inference
+python infer_raindrop.py --config configs/raindrop_scene.yaml \
+  --weights checkpoints/raindrop_scene/model_best.pth --validation \
+  --data-root /path/to/DATA_ROOT --scene-json /path/to/Drop_scen_pred.json \
+  --output-dir results/scene_val
+```
+
+Images are reflect-padded to the network multiple and cropped back to their original
+size. Inference saves only `output[0]` as lossless PNG without TTA or ensembling.
+
+### Fair ablation and smoke test
+
+```bash
+bash scripts/train_scene_ablation.sh /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
+bash scripts/eval_scene_ablation.sh /path/to/DATA_ROOT /path/to/Drop_scen_pred.json
+python tests/smoke_test_raindrop.py
+```
+
+Evaluation writes `scene_ablation.csv` and `scene_ablation.md`, including the raw
+`MSDT + Scene - MSDT baseline` metric deltas. These experiments are baselines and a
+scene-conditioning ablation; they are not claims of reproducing a challenge Top-1 result.
+
 ## 📘 Citation
 Please consider citing our work as follows if it is helpful.
 ```
