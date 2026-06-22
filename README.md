@@ -192,7 +192,8 @@ bash scripts/train_scene_ablation.sh
 ```
 
 The smoke launcher runs both models end to end for two epochs, limiting each epoch
-to one train step and one validation image, then requires `model_latest.pth` to exist.
+to one train step and one validation image. It verifies a finite non-zero gradient,
+an actual optimizer parameter update, and the creation of `model_latest.pth`.
 The synthetic CPU-capable suite remains available as
 `python tests/smoke_test_raindrop.py --device cpu`.
 

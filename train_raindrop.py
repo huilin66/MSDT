@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from itertools import islice
 from pathlib import Path
 
 import numpy as np
@@ -178,8 +179,18 @@ def main():
         model.train()
         epoch_loss = 0.0
         train_steps = 0
+        smoke_grad_norm = 0.0
+        smoke_parameter_delta = 0.0
         started = time.time()
-        for batch in tqdm(train_loader, desc=f"train {epoch}/{epochs}"):
+        if args.max_train_steps is not None:
+            epoch_step_limit = min(args.max_train_steps, len(train_loader))
+            epoch_batches = islice(train_loader, epoch_step_limit)
+        else:
+            epoch_step_limit = len(train_loader)
+            epoch_batches = train_loader
+        for batch in tqdm(
+            epoch_batches, total=epoch_step_limit, desc=f"train {epoch}/{epochs}"
+        ):
             target = batch["target"].to(device, non_blocking=True)
             image = batch["input"].to(device, non_blocking=True)
             scene_id = batch["scene_id"].to(device) if use_scene else None
@@ -193,12 +204,37 @@ def main():
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"Non-finite loss at epoch {epoch}: {float(loss)}")
             scaler.scale(loss).backward()
+            probe_parameter = None
+            probe_before = None
+            if args.max_train_steps is not None:
+                if scaler.is_enabled():
+                    scaler.unscale_(optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=float("inf")
+                )
+                if not torch.isfinite(grad_norm) or float(grad_norm) <= 0:
+                    raise FloatingPointError(
+                        f"Smoke test produced an invalid gradient norm: {float(grad_norm)}"
+                    )
+                smoke_grad_norm = max(smoke_grad_norm, float(grad_norm.detach().cpu()))
+                for parameter in model.parameters():
+                    if parameter.grad is not None and torch.count_nonzero(parameter.grad).item() > 0:
+                        probe_parameter = parameter
+                        probe_before = parameter.detach().clone()
+                        break
+                if probe_parameter is None:
+                    raise RuntimeError("Smoke test found no parameter with a non-zero gradient")
             scaler.step(optimizer)
             scaler.update()
+            if probe_parameter is not None:
+                parameter_delta = float(
+                    (probe_parameter.detach() - probe_before).abs().max().cpu()
+                )
+                if not parameter_delta > 0:
+                    raise RuntimeError("Optimizer step did not update the probed model parameter")
+                smoke_parameter_delta = max(smoke_parameter_delta, parameter_delta)
             epoch_loss += float(loss.detach().cpu())
             train_steps += 1
-            if args.max_train_steps is not None and train_steps >= args.max_train_steps:
-                break
 
         validation = validate_model(
             model,
@@ -226,7 +262,21 @@ def main():
         torch.save(state, output_dir / "model_latest.pth")
         if is_best:
             torch.save(state, output_dir / "model_best.pth")
-        print(json.dumps({**row, "best_score": best_score, "seconds": time.time() - started}))
+        log_payload = {
+            **row,
+            "best_score": best_score,
+            "train_steps": train_steps,
+            "seconds": time.time() - started,
+        }
+        if args.max_train_steps is not None:
+            log_payload.update(
+                {
+                    "smoke_grad_norm": smoke_grad_norm,
+                    "smoke_parameter_delta": smoke_parameter_delta,
+                    "optimizer_update_verified": True,
+                }
+            )
+        print(json.dumps(log_payload))
 
 
 if __name__ == "__main__":
