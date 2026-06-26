@@ -8,6 +8,7 @@ set -euo pipefail
 #   INPUT_PATH=D:/path/to/drop.png RUN_MODE=scene SCENE_ID=3 bash scripts/infer_raindrop.sh
 #   INPUT_PATH=D:/path/to/Drop RUN_MODE=scene SCENE_JSON=D:/path/to/Drop_scen_pred.json bash scripts/infer_raindrop.sh
 #   INFER_VALIDATION=1 RUN_MODE=both bash scripts/infer_raindrop.sh
+#   CREATE_SUBMISSION=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
 
 export TORCHDYNAMO_DISABLE=1
 export USE_LIBUV=0
@@ -29,6 +30,18 @@ SCENE_WEIGHTS=${SCENE_WEIGHTS:-${CKPT_ROOT}/scene/model_best.pth}
 INPUT_PATH=${INPUT_PATH:-}
 OUT_ROOT=${OUT_ROOT:-results/msdt_1x5090_infer}
 INFER_VALIDATION=${INFER_VALIDATION:-0}
+
+# Submission packaging. When CREATE_SUBMISSION=1, PNGs are flattened by default,
+# zipped, and one row is appended to HISTORY_CSV.
+CREATE_SUBMISSION=${CREATE_SUBMISSION:-0}
+SUBMISSION_ROOT=${SUBMISSION_ROOT:-submissions/msdt_1x5090}
+HISTORY_CSV=${HISTORY_CSV:-${SUBMISSION_ROOT}/submission_history.csv}
+RUN_TAG=${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}
+MODEL_NAME=${MODEL_NAME:-}
+SUBMISSION_INFO=${SUBMISSION_INFO:-}
+NOTES=${NOTES:-}
+FLATTEN_OUTPUT=${FLATTEN_OUTPUT:-${CREATE_SUBMISSION}}
+REMOVE_IMAGES_AFTER_ZIP=${REMOVE_IMAGES_AFTER_ZIP:-0}
 
 # 0 means whole-image inference with reflect padding. Use e.g. 512/64 for overlap tiles.
 TILE_SIZE=${TILE_SIZE:-0}
@@ -70,6 +83,8 @@ run_infer() {
   local output_dir="${OUT_ROOT}/${name}"
   local source_args=()
   local scene_args=()
+  local submission_args=()
+  local run_model_name="${MODEL_NAME:-msdt_${name}}"
 
   if [[ ! -f "${weights}" ]]; then
     echo "Missing checkpoint for ${name}: ${weights}" >&2
@@ -98,6 +113,27 @@ run_infer() {
     fi
   fi
 
+  if [[ "${CREATE_SUBMISSION}" == "1" ]]; then
+    output_dir="${SUBMISSION_ROOT}/${run_model_name}_${RUN_TAG}"
+    submission_args+=(
+      --archive-path "${SUBMISSION_ROOT}/${run_model_name}_${RUN_TAG}.zip"
+      --history-csv "${HISTORY_CSV}"
+      --model-name "${run_model_name}"
+      --notes "${NOTES}"
+    )
+    if [[ -n "${SUBMISSION_INFO}" ]]; then
+      submission_args+=(--submission-info "${SUBMISSION_INFO}")
+    fi
+  fi
+
+  if [[ "${FLATTEN_OUTPUT}" == "1" ]]; then
+    submission_args+=(--flatten-output)
+  fi
+
+  if [[ "${REMOVE_IMAGES_AFTER_ZIP}" == "1" ]]; then
+    submission_args+=(--remove-images-after-zip)
+  fi
+
   mkdir -p "${output_dir}"
 
   echo "============================================================"
@@ -110,6 +146,10 @@ run_infer() {
     echo "Input: ${INPUT_PATH}"
   fi
   echo "Output: ${output_dir}"
+  if [[ "${CREATE_SUBMISSION}" == "1" ]]; then
+    echo "Archive: ${SUBMISSION_ROOT}/${run_model_name}_${RUN_TAG}.zip"
+    echo "History CSV: ${HISTORY_CSV}"
+  fi
   echo "============================================================"
 
   CUDA_VISIBLE_DEVICES="${GPU}" python -u infer_raindrop.py \
@@ -120,7 +160,8 @@ run_infer() {
     --tile-size "${TILE_SIZE}" \
     --tile-overlap "${TILE_OVERLAP}" \
     "${source_args[@]}" \
-    "${scene_args[@]}"
+    "${scene_args[@]}" \
+    "${submission_args[@]}"
 }
 
 case "${RUN_MODE}" in

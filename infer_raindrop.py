@@ -4,7 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import re
+import shutil
+import time
+import zipfile
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +28,31 @@ from raindrop_utils import (
     resolve_device,
     tensor_to_png,
 )
+
+
+HISTORY_FIELDS = [
+    "timestamp",
+    "model_name",
+    "archive_name",
+    "checkpoint",
+    "config",
+    "use_scene",
+    "input_mode",
+    "input_path",
+    "data_root",
+    "scene_json",
+    "scene_id",
+    "num_images",
+    "tile_size",
+    "tile_overlap",
+    "output_dir",
+    "runtime_seconds",
+    "psnr_y",
+    "ssim_y",
+    "lpips",
+    "score",
+    "notes",
+]
 
 
 def load_rgb(path: Path) -> torch.Tensor:
@@ -42,6 +74,54 @@ def load_labels(path: str) -> dict:
     return labels
 
 
+def sanitize_name(name: str) -> str:
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())
+    return name.strip("._-") or "msdt"
+
+
+def default_model_name(weights_path: str, use_scene: bool) -> str:
+    path = Path(weights_path)
+    parent = path.parent.name
+    if parent and parent not in {".", ""}:
+        return parent
+    return "scene" if use_scene else "no_scene"
+
+
+def create_archive(image_dir: Path, archive_path: Path, submission_info: str | None = None) -> int:
+    image_files = sorted(
+        path for path in image_dir.rglob("*.png")
+        if path.is_file()
+    )
+    if not image_files:
+        raise RuntimeError(f"No prediction PNG files under: {image_dir}")
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for image_path in image_files:
+            archive.write(image_path, arcname=image_path.relative_to(image_dir).as_posix())
+        if submission_info:
+            info_path = Path(submission_info)
+            if info_path.is_file():
+                archive.write(info_path, arcname=info_path.name)
+            else:
+                print(f"Warning: submission info file not found, skipped: {info_path}")
+    return len(image_files)
+
+
+def append_history(path: Path, row: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists() or path.stat().st_size == 0
+    if not write_header:
+        with path.open("r", newline="", encoding="utf-8-sig") as file:
+            header = next(csv.reader(file), [])
+        if header != HISTORY_FIELDS:
+            raise RuntimeError(f"Existing history CSV has an incompatible header: {path}")
+    with path.open("a", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(file, fieldnames=HISTORY_FIELDS)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
@@ -56,6 +136,13 @@ def main():
     parser.add_argument("--device")
     parser.add_argument("--tile-size", type=int)
     parser.add_argument("--tile-overlap", type=int)
+    parser.add_argument("--archive-path", help="Optional ZIP path for generated PNGs")
+    parser.add_argument("--history-csv", help="Optional CSV path for submission/inference history")
+    parser.add_argument("--model-name", default="", help="Name recorded in CSV; defaults to checkpoint parent")
+    parser.add_argument("--submission-info", default="", help="Optional file added to the ZIP")
+    parser.add_argument("--notes", default="")
+    parser.add_argument("--flatten-output", action="store_true", help="Save all PNGs at output-dir root as <stem>.png")
+    parser.add_argument("--remove-images-after-zip", action="store_true")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -112,6 +199,15 @@ def main():
                     scene_id = labels[path.name]
             jobs.append((path, path.relative_to(base), scene_id))
 
+    if args.flatten_output:
+        output_names = [f"{input_path.stem}.png" for input_path, _, _ in jobs]
+        duplicates = sorted(name for name, count in Counter(output_names).items() if count > 1)
+        if duplicates:
+            raise RuntimeError(
+                f"Duplicate output names cannot be flattened into one submission folder: {duplicates[0]}"
+            )
+
+    started = time.perf_counter()
     with torch.no_grad():
         for input_path, relative, scene_value in jobs:
             image = load_rgb(input_path).to(device)
@@ -123,13 +219,63 @@ def main():
                 tile_size=tile_size,
                 tile_overlap=overlap,
             )
-            output_path = (output_dir / relative).with_suffix(".png")
+            if args.flatten_output:
+                output_path = output_dir / f"{input_path.stem}.png"
+            else:
+                output_path = (output_dir / relative).with_suffix(".png")
             tensor_to_png(restored, str(output_path))
             with Image.open(output_path) as saved:
                 expected_size = (image.shape[-1], image.shape[-2])
                 if saved.size != expected_size:
                     raise RuntimeError(f"Saved size mismatch for {output_path}: {saved.size} vs {expected_size}")
             print(output_path)
+    runtime = time.perf_counter() - started
+
+    archive_path = Path(args.archive_path) if args.archive_path else None
+    if archive_path is not None:
+        archived = create_archive(output_dir, archive_path, args.submission_info or None)
+        if archived != len(jobs):
+            raise RuntimeError(f"Archive contains {archived} PNGs, expected {len(jobs)}")
+        print(f"Archive: {archive_path}")
+
+    if args.history_csv:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_name = sanitize_name(args.model_name or default_model_name(args.weights, use_scene))
+        append_history(
+            Path(args.history_csv),
+            {
+                "timestamp": timestamp,
+                "model_name": model_name,
+                "archive_name": archive_path.name if archive_path is not None else "",
+                "checkpoint": str(Path(args.weights).resolve()),
+                "config": str(Path(args.config).resolve()),
+                "use_scene": int(use_scene),
+                "input_mode": "validation" if args.validation else "input",
+                "input_path": "" if args.validation else str(Path(args.input).resolve()),
+                "data_root": str(Path(args.data_root).resolve()) if args.data_root else "",
+                "scene_json": str(Path(args.scene_json).resolve()) if args.scene_json else "",
+                "scene_id": "" if args.scene_id is None else args.scene_id,
+                "num_images": len(jobs),
+                "tile_size": tile_size,
+                "tile_overlap": overlap,
+                "output_dir": str(output_dir.resolve()),
+                "runtime_seconds": round(runtime, 3),
+                "psnr_y": "",
+                "ssim_y": "",
+                "lpips": "",
+                "score": "",
+                "notes": args.notes,
+            },
+        )
+        print(f"History CSV: {args.history_csv}")
+
+    if args.remove_images_after_zip:
+        if archive_path is None:
+            raise ValueError("--remove-images-after-zip requires --archive-path")
+        shutil.rmtree(output_dir)
+        print(f"Removed image directory: {output_dir}")
+
+    print(f"Runtime: {runtime:.2f}s ({runtime / max(1, len(jobs)):.3f}s/image)")
 
 
 if __name__ == "__main__":
