@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from PIL import Image
+from tqdm import tqdm
 
 from raindrop_data import IMAGE_SUFFIXES
 from raindrop_engine import prepare_datasets
@@ -209,7 +210,7 @@ def main():
 
     started = time.perf_counter()
     with torch.no_grad():
-        for input_path, relative, scene_value in jobs:
+        for input_path, relative, scene_value in tqdm(jobs, desc="MSDT inference", unit="img"):
             image = load_rgb(input_path).to(device)
             scene_id = torch.tensor([scene_value], device=device) if use_scene else None
             restored = infer_image(
@@ -228,7 +229,7 @@ def main():
                 expected_size = (image.shape[-1], image.shape[-2])
                 if saved.size != expected_size:
                     raise RuntimeError(f"Saved size mismatch for {output_path}: {saved.size} vs {expected_size}")
-            print(output_path)
+    print(f"Saved PNGs: {output_dir}")
     runtime = time.perf_counter() - started
 
     archive_path = Path(args.archive_path) if args.archive_path else None
