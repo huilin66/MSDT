@@ -24,8 +24,21 @@ DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn/RainDrop_Train}
 SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/Drop_scen_pred.json}
 
 CKPT_ROOT=${CKPT_ROOT:-checkpoints/msdt_1x5090}
-NO_SCENE_WEIGHTS=${NO_SCENE_WEIGHTS:-${CKPT_ROOT}/no_scene/model_best.pth}
-SCENE_WEIGHTS=${SCENE_WEIGHTS:-${CKPT_ROOT}/scene/model_best.pth}
+CKPT_TYPE=${CKPT_TYPE:-best}
+case "${CKPT_TYPE}" in
+  best)
+    DEFAULT_CKPT_NAME="model_best.pth"
+    ;;
+  last|latest)
+    DEFAULT_CKPT_NAME="model_latest.pth"
+    ;;
+  *)
+    echo "CKPT_TYPE must be best, last, or latest; got: ${CKPT_TYPE}" >&2
+    exit 1
+    ;;
+esac
+NO_SCENE_WEIGHTS=${NO_SCENE_WEIGHTS:-${CKPT_ROOT}/no_scene/${DEFAULT_CKPT_NAME}}
+SCENE_WEIGHTS=${SCENE_WEIGHTS:-${CKPT_ROOT}/scene/${DEFAULT_CKPT_NAME}}
 
 INPUT_PATH=${INPUT_PATH:-${DATA_PATH}/Drop}
 OUT_ROOT=${OUT_ROOT:-results/msdt_1x5090_infer}
