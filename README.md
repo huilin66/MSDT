@@ -134,6 +134,21 @@ Validation reports `PSNR_Y`, `SSIM_Y`, AlexNet `LPIPS`, and
 ### Inference
 
 ```bash
+# 1x5090 launcher: one image/folder, no-scene model
+INPUT_PATH=/path/to/image_or_folder RUN_MODE=no_scene \
+bash scripts/infer_raindrop.sh
+
+# 1x5090 launcher: one image/folder, scene model with one manual label
+INPUT_PATH=/path/to/image.png RUN_MODE=scene SCENE_ID=3 \
+bash scripts/infer_raindrop.sh
+
+# 1x5090 launcher: folder or validation split with labels from JSON
+INPUT_PATH=/path/to/images RUN_MODE=scene SCENE_JSON=/path/to/Drop_scen_pred.json \
+bash scripts/infer_raindrop.sh
+
+INFER_VALIDATION=1 RUN_MODE=both DATA_PATH=/path/to/DATA_ROOT \
+SCENE_JSON=/path/to/Drop_scen_pred.json bash scripts/infer_raindrop.sh
+
 # One image, no-scene model
 python infer_raindrop.py --config configs/raindrop_no_scene.yaml \
   --weights checkpoints/raindrop_no_scene/model_best.pth \
