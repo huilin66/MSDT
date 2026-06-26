@@ -20,7 +20,7 @@ cd "${REPO_ROOT}"
 GPU=${GPU:-0}
 RUN_MODE=${RUN_MODE:-no_scene}
 
-DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn/RainDrop_Train}
+DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn}
 SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/Drop_scen_pred.json}
 
 CKPT_ROOT=${CKPT_ROOT:-checkpoints/msdt_1x5090}
