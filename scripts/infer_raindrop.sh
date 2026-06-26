@@ -46,7 +46,7 @@ INFER_VALIDATION=${INFER_VALIDATION:-0}
 
 # Submission packaging. When CREATE_SUBMISSION=1, PNGs are flattened by default,
 # zipped, and one row is appended to HISTORY_CSV.
-CREATE_SUBMISSION=${CREATE_SUBMISSION:-0}
+CREATE_SUBMISSION=${CREATE_SUBMISSION:-1}
 SUBMISSION_ROOT=${SUBMISSION_ROOT:-submissions/msdt_1x5090}
 HISTORY_CSV=${HISTORY_CSV:-${SUBMISSION_ROOT}/submission_history.csv}
 RUN_TAG=${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}
