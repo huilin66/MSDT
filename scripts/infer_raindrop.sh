@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GPU=${GPU:-0}
-RUN_MODE=${RUN_MODE:-scene}
+RUN_MODE=${RUN_MODE:-no_scene}
 
 DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn/RainDrop_Train}
 SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/Drop_scen_pred.json}
@@ -27,7 +27,7 @@ CKPT_ROOT=${CKPT_ROOT:-checkpoints/msdt_1x5090}
 NO_SCENE_WEIGHTS=${NO_SCENE_WEIGHTS:-${CKPT_ROOT}/no_scene/model_best.pth}
 SCENE_WEIGHTS=${SCENE_WEIGHTS:-${CKPT_ROOT}/scene/model_best.pth}
 
-INPUT_PATH=${INPUT_PATH:-}
+INPUT_PATH=${INPUT_PATH:-${DATA_PATH}/Drop}
 OUT_ROOT=${OUT_ROOT:-results/msdt_1x5090_infer}
 INFER_VALIDATION=${INFER_VALIDATION:-0}
 
