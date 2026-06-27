@@ -89,16 +89,18 @@ def default_model_name(weights_path: str, use_scene: bool) -> str:
 
 
 def create_archive(image_dir: Path, archive_path: Path, submission_info: str | None = None) -> int:
-    image_files = sorted(
-        path for path in image_dir.rglob("*.png")
-        if path.is_file()
-    )
+    # Match submit_jit.py exactly: the archive root contains only flat PNG files
+    # from image_dir/*.png, never an outer folder or nested relative paths.
+    image_files = sorted(image_dir.glob("*.png"))
     if not image_files:
-        raise RuntimeError(f"No prediction PNG files under: {image_dir}")
+        raise RuntimeError(
+            f"No root-level prediction PNG files under: {image_dir}. "
+            "Use --flatten-output for submission ZIPs."
+        )
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for image_path in image_files:
-            archive.write(image_path, arcname=image_path.relative_to(image_dir).as_posix())
+            archive.write(image_path, arcname=image_path.name)
         if submission_info:
             info_path = Path(submission_info)
             if info_path.is_file():
@@ -140,7 +142,7 @@ def main():
     parser.add_argument("--archive-path", help="Optional ZIP path for generated PNGs")
     parser.add_argument("--history-csv", help="Optional CSV path for submission/inference history")
     parser.add_argument("--model-name", default="", help="Name recorded in CSV; defaults to checkpoint parent")
-    parser.add_argument("--submission-info", default="", help="Optional file added to the ZIP")
+    parser.add_argument("--submission-info", default="readme.txt", help="Optional file added to the ZIP; empty disables it")
     parser.add_argument("--notes", default="")
     parser.add_argument("--flatten-output", action="store_true", help="Save all PNGs at output-dir root as <stem>.png")
     parser.add_argument("--remove-images-after-zip", action="store_true")
