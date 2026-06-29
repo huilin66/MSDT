@@ -24,7 +24,7 @@ DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn}
 SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/Drop_scen_pred.json}
 
 CKPT_ROOT=${CKPT_ROOT:-checkpoints/msdt_1x5090}
-CKPT_TYPE=${CKPT_TYPE:-best}
+CKPT_TYPE=${CKPT_TYPE:-last}
 case "${CKPT_TYPE}" in
   best)
     DEFAULT_CKPT_NAME="model_best.pth"
