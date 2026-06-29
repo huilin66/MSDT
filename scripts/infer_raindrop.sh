@@ -127,9 +127,9 @@ run_infer() {
   fi
 
   if [[ "${CREATE_SUBMISSION}" == "1" ]]; then
-    output_dir="${SUBMISSION_ROOT}/${run_model_name}_${RUN_TAG}"
+    output_dir="${SUBMISSION_ROOT}/${run_model_name}_${CKPT_TYPE}_${RUN_TAG}"
     submission_args+=(
-      --archive-path "${SUBMISSION_ROOT}/${run_model_name}_${RUN_TAG}.zip"
+      --archive-path "${SUBMISSION_ROOT}/${run_model_name}_${CKPT_TYPE}_${RUN_TAG}.zip"
       --history-csv "${HISTORY_CSV}"
       --model-name "${run_model_name}"
       --notes "${NOTES}"
@@ -160,7 +160,7 @@ run_infer() {
   fi
   echo "Output: ${output_dir}"
   if [[ "${CREATE_SUBMISSION}" == "1" ]]; then
-    echo "Archive: ${SUBMISSION_ROOT}/${run_model_name}_${RUN_TAG}.zip"
+    echo "Archive: ${SUBMISSION_ROOT}/${run_model_name}_${CKPT_TYPE}_${RUN_TAG}.zip"
     echo "History CSV: ${HISTORY_CSV}"
   fi
   echo "============================================================"
