@@ -55,6 +55,13 @@ HISTORY_FIELDS = [
     "notes",
 ]
 
+DEFAULT_SUBMISSION_INFO = (
+    "runtime per video [s] : 1.00\r\n"
+    "CPU[1] / GPU[0] : 0\r\n"
+    "Extra Data [1] / No Extra Data [0] : 0\r\n"
+    "Other description : MSDT baseline\r\n"
+)
+
 
 def load_rgb(path: Path) -> torch.Tensor:
     with Image.open(path) as image:
@@ -105,6 +112,8 @@ def create_archive(image_dir: Path, archive_path: Path, submission_info: str | N
             info_path = Path(submission_info)
             if info_path.is_file():
                 archive.write(info_path, arcname=info_path.name)
+            elif info_path.name.lower() == "readme.txt":
+                archive.writestr("readme.txt", DEFAULT_SUBMISSION_INFO)
             else:
                 print(f"Warning: submission info file not found, skipped: {info_path}")
     return len(image_files)
