@@ -9,7 +9,7 @@ set -euo pipefail
 #   INPUT_PATH=D:/path/to/Drop RUN_MODE=scene SCENE_JSON=D:/path/to/Drop_scen_pred.json bash scripts/infer_raindrop.sh
 #   INFER_VALIDATION=1 RUN_MODE=both bash scripts/infer_raindrop.sh
 #   CREATE_SUBMISSION=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
-#   VFLIP=1 ROT90=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
+#   VFLIP=1 HFLIP=1 ROT90=1 ROT180=1 ROT270=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
 
 export TORCHDYNAMO_DISABLE=1
 export USE_LIBUV=0
@@ -61,7 +61,10 @@ REMOVE_IMAGES_AFTER_ZIP=${REMOVE_IMAGES_AFTER_ZIP:-0}
 TILE_SIZE=${TILE_SIZE:-0}
 TILE_OVERLAP=${TILE_OVERLAP:-64}
 VFLIP=${VFLIP:-0}
+HFLIP=${HFLIP:-0}
 ROT90=${ROT90:-0}
+ROT180=${ROT180:-0}
+ROT270=${ROT270:-0}
 
 # For scene-conditioned single-image/folder inference:
 # - set SCENE_ID=0/1/2/3 to force one label for all inputs, or
@@ -91,7 +94,7 @@ if [[ -n "${SCENE_ID}" && ! "${SCENE_ID}" =~ ^[0-3]$ ]]; then
   exit 1
 fi
 
-for flag_name in VFLIP ROT90; do
+for flag_name in VFLIP HFLIP ROT90 ROT180 ROT270; do
   flag_value="${!flag_name}"
   if [[ ! "${flag_value}" =~ ^[01]$ ]]; then
     echo "${flag_name} must be 0 or 1; got: ${flag_value}" >&2
@@ -163,15 +166,27 @@ run_infer() {
     prediction_args+=(--vflip)
   fi
 
+  if [[ "${HFLIP}" == "1" ]]; then
+    prediction_args+=(--hflip)
+  fi
+
   if [[ "${ROT90}" == "1" ]]; then
     prediction_args+=(--rot90)
+  fi
+
+  if [[ "${ROT180}" == "1" ]]; then
+    prediction_args+=(--rot180)
+  fi
+
+  if [[ "${ROT270}" == "1" ]]; then
+    prediction_args+=(--rot270)
   fi
 
   mkdir -p "${output_dir}"
 
   echo "============================================================"
   echo "[Infer] ${name}: use_scene_condition=${use_scene}"
-  echo "GPU=${GPU}, tile_size=${TILE_SIZE}, tile_overlap=${TILE_OVERLAP}, vflip=${VFLIP}, rot90=${ROT90}"
+  echo "GPU=${GPU}, tile_size=${TILE_SIZE}, tile_overlap=${TILE_OVERLAP}, vflip=${VFLIP}, hflip=${HFLIP}, rot90=${ROT90}, rot180=${ROT180}, rot270=${ROT270}"
   echo "Weights: ${weights}"
   if [[ "${INFER_VALIDATION}" == "1" ]]; then
     echo "Validation data: ${DATA_PATH}"

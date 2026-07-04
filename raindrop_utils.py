@@ -181,7 +181,10 @@ def infer_image(
     tile_overlap: int = 32,
     multiple: int = 4,
     vflip: bool = False,
+    hflip: bool = False,
     rot90: bool = False,
+    rot180: bool = False,
+    rot270: bool = False,
 ) -> torch.Tensor:
     if image.ndim != 4 or image.shape[0] != 1:
         raise ValueError(f"Inference expects BCHW with batch size 1, got {tuple(image.shape)}")
@@ -226,8 +229,14 @@ def infer_image(
     predictions = [infer_once(image)]
     if vflip:
         predictions.append(infer_once(image.flip(2)).flip(2))
+    if hflip:
+        predictions.append(infer_once(image.flip(3)).flip(3))
     if rot90:
         predictions.append(torch.rot90(infer_once(torch.rot90(image, 1, (2, 3))), -1, (2, 3)))
+    if rot180:
+        predictions.append(torch.rot90(infer_once(torch.rot90(image, 2, (2, 3))), -2, (2, 3)))
+    if rot270:
+        predictions.append(torch.rot90(infer_once(torch.rot90(image, 3, (2, 3))), -3, (2, 3)))
     restored = torch.stack(predictions, dim=0).mean(dim=0).clamp(0.0, 1.0)
     if not torch.isfinite(restored).all() or restored.min() < 0 or restored.max() > 1:
         raise FloatingPointError("Final inference output failed finite/range checks")

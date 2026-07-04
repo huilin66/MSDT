@@ -168,7 +168,10 @@ def main():
                 tile_size=32,
                 tile_overlap=8,
                 vflip=True,
+                hflip=True,
                 rot90=True,
+                rot180=True,
+                rot270=True,
             )
             assert restored_tta.shape == odd.shape
             output = root / f"{mode}_input.png"

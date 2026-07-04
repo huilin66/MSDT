@@ -47,7 +47,10 @@ HISTORY_FIELDS = [
     "tile_size",
     "tile_overlap",
     "vflip",
+    "hflip",
     "rot90",
+    "rot180",
+    "rot270",
     "output_dir",
     "runtime_seconds",
     "psnr_y",
@@ -159,7 +162,10 @@ def main():
     parser.add_argument("--tile-size", type=int)
     parser.add_argument("--tile-overlap", type=int)
     parser.add_argument("--vflip", action="store_true", help="Average original and vertically flipped predictions")
+    parser.add_argument("--hflip", action="store_true", help="Average original and horizontally flipped predictions")
     parser.add_argument("--rot90", action="store_true", help="Average original and 90-degree rotated predictions")
+    parser.add_argument("--rot180", action="store_true", help="Average original and 180-degree rotated predictions")
+    parser.add_argument("--rot270", action="store_true", help="Average original and 270-degree rotated predictions")
     parser.add_argument("--archive-path", help="Optional ZIP path for generated PNGs")
     parser.add_argument("--history-csv", help="Optional CSV path for submission/inference history")
     parser.add_argument("--model-name", default="", help="Name recorded in CSV; defaults to checkpoint parent")
@@ -243,7 +249,10 @@ def main():
                 tile_size=tile_size,
                 tile_overlap=overlap,
                 vflip=args.vflip,
+                hflip=args.hflip,
                 rot90=args.rot90,
+                rot180=args.rot180,
+                rot270=args.rot270,
             )
             if args.flatten_output:
                 output_path = output_dir / f"{input_path.stem}.png"
@@ -285,7 +294,10 @@ def main():
                 "tile_size": tile_size,
                 "tile_overlap": overlap,
                 "vflip": int(args.vflip),
+                "hflip": int(args.hflip),
                 "rot90": int(args.rot90),
+                "rot180": int(args.rot180),
+                "rot270": int(args.rot270),
                 "output_dir": str(output_dir.resolve()),
                 "runtime_seconds": round(runtime, 3),
                 "psnr_y": "",
