@@ -180,44 +180,55 @@ def infer_image(
     tile_size: int = 0,
     tile_overlap: int = 32,
     multiple: int = 4,
+    vflip: bool = False,
+    rot90: bool = False,
 ) -> torch.Tensor:
     if image.ndim != 4 or image.shape[0] != 1:
         raise ValueError(f"Inference expects BCHW with batch size 1, got {tuple(image.shape)}")
-    padded, original_size = pad_to_multiple(image, multiple)
-    height, width = padded.shape[-2:]
-    if not tile_size or tile_size >= max(height, width):
-        outputs = _model_forward(model, padded, scene_id)
-        validate_outputs(outputs, padded)
-        restored = outputs[0]
-    else:
-        if tile_size % multiple:
-            raise ValueError(f"tile_size must be divisible by {multiple}")
-        if tile_overlap < 0 or tile_overlap >= tile_size:
-            raise ValueError("tile_overlap must be >= 0 and smaller than tile_size")
-        if tile_size > height or tile_size > width:
-            extra_bottom, extra_right = max(0, tile_size - height), max(0, tile_size - width)
-            padded = _reflect_pad(padded, extra_right, extra_bottom)
-            height, width = padded.shape[-2:]
-        stride = tile_size - tile_overlap
-        ys = list(range(0, max(1, height - tile_size + 1), stride))
-        xs = list(range(0, max(1, width - tile_size + 1), stride))
-        if ys[-1] != height - tile_size:
-            ys.append(height - tile_size)
-        if xs[-1] != width - tile_size:
-            xs.append(width - tile_size)
-        window_1d = torch.hann_window(tile_size, periodic=False, device=image.device, dtype=image.dtype)
-        window = torch.outer(window_1d, window_1d).clamp_min(1e-3)[None, None]
-        accumulation = torch.zeros_like(padded)
-        weights = torch.zeros_like(padded[:, :1])
-        for top in ys:
-            for left in xs:
-                tile = padded[:, :, top:top + tile_size, left:left + tile_size]
-                tile_outputs = _model_forward(model, tile, scene_id)
-                validate_outputs(tile_outputs, tile)
-                accumulation[:, :, top:top + tile_size, left:left + tile_size] += tile_outputs[0] * window
-                weights[:, :, top:top + tile_size, left:left + tile_size] += window
-        restored = accumulation / weights.clamp_min(1e-6)
-    restored = restored[:, :, :original_size[0], :original_size[1]].clamp(0.0, 1.0)
+
+    def infer_once(input_image: torch.Tensor) -> torch.Tensor:
+        padded, original_size = pad_to_multiple(input_image, multiple)
+        height, width = padded.shape[-2:]
+        if not tile_size or tile_size >= max(height, width):
+            outputs = _model_forward(model, padded, scene_id)
+            validate_outputs(outputs, padded)
+            restored_once = outputs[0]
+        else:
+            if tile_size % multiple:
+                raise ValueError(f"tile_size must be divisible by {multiple}")
+            if tile_overlap < 0 or tile_overlap >= tile_size:
+                raise ValueError("tile_overlap must be >= 0 and smaller than tile_size")
+            if tile_size > height or tile_size > width:
+                extra_bottom, extra_right = max(0, tile_size - height), max(0, tile_size - width)
+                padded = _reflect_pad(padded, extra_right, extra_bottom)
+                height, width = padded.shape[-2:]
+            stride = tile_size - tile_overlap
+            ys = list(range(0, max(1, height - tile_size + 1), stride))
+            xs = list(range(0, max(1, width - tile_size + 1), stride))
+            if ys[-1] != height - tile_size:
+                ys.append(height - tile_size)
+            if xs[-1] != width - tile_size:
+                xs.append(width - tile_size)
+            window_1d = torch.hann_window(tile_size, periodic=False, device=input_image.device, dtype=input_image.dtype)
+            window = torch.outer(window_1d, window_1d).clamp_min(1e-3)[None, None]
+            accumulation = torch.zeros_like(padded)
+            weights = torch.zeros_like(padded[:, :1])
+            for top in ys:
+                for left in xs:
+                    tile = padded[:, :, top:top + tile_size, left:left + tile_size]
+                    tile_outputs = _model_forward(model, tile, scene_id)
+                    validate_outputs(tile_outputs, tile)
+                    accumulation[:, :, top:top + tile_size, left:left + tile_size] += tile_outputs[0] * window
+                    weights[:, :, top:top + tile_size, left:left + tile_size] += window
+            restored_once = accumulation / weights.clamp_min(1e-6)
+        return restored_once[:, :, :original_size[0], :original_size[1]]
+
+    predictions = [infer_once(image)]
+    if vflip:
+        predictions.append(infer_once(image.flip(2)).flip(2))
+    if rot90:
+        predictions.append(torch.rot90(infer_once(torch.rot90(image, 1, (2, 3))), -1, (2, 3)))
+    restored = torch.stack(predictions, dim=0).mean(dim=0).clamp(0.0, 1.0)
     if not torch.isfinite(restored).all() or restored.min() < 0 or restored.max() > 1:
         raise FloatingPointError("Final inference output failed finite/range checks")
     return restored
@@ -239,4 +250,3 @@ def append_metrics_csv(path: Path, row: Dict[str, Any]) -> None:
         if write_header:
             writer.writeheader()
         writer.writerow(row)
-

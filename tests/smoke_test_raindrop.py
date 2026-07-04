@@ -161,6 +161,16 @@ def main():
             sid = torch.tensor([3], device=device) if use_scene else None
             restored = infer_image(model, odd, sid, tile_size=32, tile_overlap=8)
             assert restored.shape == odd.shape
+            restored_tta = infer_image(
+                model,
+                odd,
+                sid,
+                tile_size=32,
+                tile_overlap=8,
+                vflip=True,
+                rot90=True,
+            )
+            assert restored_tta.shape == odd.shape
             output = root / f"{mode}_input.png"
             tensor_to_png(restored, str(output))
             with Image.open(output) as saved:

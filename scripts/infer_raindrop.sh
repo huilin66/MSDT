@@ -9,6 +9,7 @@ set -euo pipefail
 #   INPUT_PATH=D:/path/to/Drop RUN_MODE=scene SCENE_JSON=D:/path/to/Drop_scen_pred.json bash scripts/infer_raindrop.sh
 #   INFER_VALIDATION=1 RUN_MODE=both bash scripts/infer_raindrop.sh
 #   CREATE_SUBMISSION=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
+#   VFLIP=1 ROT90=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
 
 export TORCHDYNAMO_DISABLE=1
 export USE_LIBUV=0
@@ -59,6 +60,8 @@ REMOVE_IMAGES_AFTER_ZIP=${REMOVE_IMAGES_AFTER_ZIP:-0}
 # 0 means whole-image inference with reflect padding. Use e.g. 512/64 for overlap tiles.
 TILE_SIZE=${TILE_SIZE:-0}
 TILE_OVERLAP=${TILE_OVERLAP:-64}
+VFLIP=${VFLIP:-0}
+ROT90=${ROT90:-0}
 
 # For scene-conditioned single-image/folder inference:
 # - set SCENE_ID=0/1/2/3 to force one label for all inputs, or
@@ -88,6 +91,14 @@ if [[ -n "${SCENE_ID}" && ! "${SCENE_ID}" =~ ^[0-3]$ ]]; then
   exit 1
 fi
 
+for flag_name in VFLIP ROT90; do
+  flag_value="${!flag_name}"
+  if [[ ! "${flag_value}" =~ ^[01]$ ]]; then
+    echo "${flag_name} must be 0 or 1; got: ${flag_value}" >&2
+    exit 1
+  fi
+done
+
 run_infer() {
   local name="$1"
   local config="$2"
@@ -97,6 +108,7 @@ run_infer() {
   local source_args=()
   local scene_args=()
   local submission_args=()
+  local prediction_args=()
   local run_model_name="${MODEL_NAME:-msdt_${name}}"
 
   if [[ ! -f "${weights}" ]]; then
@@ -147,11 +159,19 @@ run_infer() {
     submission_args+=(--remove-images-after-zip)
   fi
 
+  if [[ "${VFLIP}" == "1" ]]; then
+    prediction_args+=(--vflip)
+  fi
+
+  if [[ "${ROT90}" == "1" ]]; then
+    prediction_args+=(--rot90)
+  fi
+
   mkdir -p "${output_dir}"
 
   echo "============================================================"
   echo "[Infer] ${name}: use_scene_condition=${use_scene}"
-  echo "GPU=${GPU}, tile_size=${TILE_SIZE}, tile_overlap=${TILE_OVERLAP}"
+  echo "GPU=${GPU}, tile_size=${TILE_SIZE}, tile_overlap=${TILE_OVERLAP}, vflip=${VFLIP}, rot90=${ROT90}"
   echo "Weights: ${weights}"
   if [[ "${INFER_VALIDATION}" == "1" ]]; then
     echo "Validation data: ${DATA_PATH}"
@@ -174,6 +194,7 @@ run_infer() {
     --tile-overlap "${TILE_OVERLAP}" \
     "${source_args[@]}" \
     "${scene_args[@]}" \
+    "${prediction_args[@]}" \
     "${submission_args[@]}"
 }
 

@@ -46,6 +46,8 @@ HISTORY_FIELDS = [
     "num_images",
     "tile_size",
     "tile_overlap",
+    "vflip",
+    "rot90",
     "output_dir",
     "runtime_seconds",
     "psnr_y",
@@ -124,9 +126,17 @@ def append_history(path: Path, row: dict) -> None:
     write_header = not path.exists() or path.stat().st_size == 0
     if not write_header:
         with path.open("r", newline="", encoding="utf-8-sig") as file:
-            header = next(csv.reader(file), [])
+            reader = csv.DictReader(file)
+            header = reader.fieldnames or []
+            rows = list(reader)
         if header != HISTORY_FIELDS:
-            raise RuntimeError(f"Existing history CSV has an incompatible header: {path}")
+            if not set(header).issubset(HISTORY_FIELDS):
+                raise RuntimeError(f"Existing history CSV has an incompatible header: {path}")
+            with path.open("w", newline="", encoding="utf-8-sig") as file:
+                writer = csv.DictWriter(file, fieldnames=HISTORY_FIELDS)
+                writer.writeheader()
+                for old_row in rows:
+                    writer.writerow({field: old_row.get(field, "") for field in HISTORY_FIELDS})
     with path.open("a", newline="", encoding="utf-8-sig") as file:
         writer = csv.DictWriter(file, fieldnames=HISTORY_FIELDS)
         if write_header:
@@ -148,6 +158,8 @@ def main():
     parser.add_argument("--device")
     parser.add_argument("--tile-size", type=int)
     parser.add_argument("--tile-overlap", type=int)
+    parser.add_argument("--vflip", action="store_true", help="Average original and vertically flipped predictions")
+    parser.add_argument("--rot90", action="store_true", help="Average original and 90-degree rotated predictions")
     parser.add_argument("--archive-path", help="Optional ZIP path for generated PNGs")
     parser.add_argument("--history-csv", help="Optional CSV path for submission/inference history")
     parser.add_argument("--model-name", default="", help="Name recorded in CSV; defaults to checkpoint parent")
@@ -230,6 +242,8 @@ def main():
                 scene_id=scene_id,
                 tile_size=tile_size,
                 tile_overlap=overlap,
+                vflip=args.vflip,
+                rot90=args.rot90,
             )
             if args.flatten_output:
                 output_path = output_dir / f"{input_path.stem}.png"
@@ -270,6 +284,8 @@ def main():
                 "num_images": len(jobs),
                 "tile_size": tile_size,
                 "tile_overlap": overlap,
+                "vflip": int(args.vflip),
+                "rot90": int(args.rot90),
                 "output_dir": str(output_dir.resolve()),
                 "runtime_seconds": round(runtime, 3),
                 "psnr_y": "",
