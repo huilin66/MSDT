@@ -167,6 +167,8 @@ def main():
                 sid,
                 tile_size=32,
                 tile_overlap=8,
+                tile_stride=16,
+                scales=(1.0, 0.75),
                 vflip=True,
                 hflip=True,
                 rot90=True,

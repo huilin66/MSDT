@@ -10,6 +10,7 @@ set -euo pipefail
 #   INFER_VALIDATION=1 RUN_MODE=both bash scripts/infer_raindrop.sh
 #   CREATE_SUBMISSION=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
 #   VFLIP=1 HFLIP=1 ROT90=1 ROT180=1 ROT270=1 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
+#   SCALE=1,0.75 STRIDE=384 TILE_SIZE=512 INPUT_PATH=D:/path/to/Drop RUN_MODE=no_scene bash scripts/infer_raindrop.sh
 
 export TORCHDYNAMO_DISABLE=1
 export USE_LIBUV=0
@@ -60,6 +61,8 @@ REMOVE_IMAGES_AFTER_ZIP=${REMOVE_IMAGES_AFTER_ZIP:-0}
 # 0 means whole-image inference with reflect padding. Use e.g. 512/64 for overlap tiles.
 TILE_SIZE=${TILE_SIZE:-0}
 TILE_OVERLAP=${TILE_OVERLAP:-64}
+STRIDE=${STRIDE:-}
+SCALE=${SCALE:-1}
 VFLIP=${VFLIP:-0}
 HFLIP=${HFLIP:-0}
 ROT90=${ROT90:-0}
@@ -101,6 +104,11 @@ for flag_name in VFLIP HFLIP ROT90 ROT180 ROT270; do
     exit 1
   fi
 done
+
+if [[ -n "${STRIDE}" && ! "${STRIDE}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "STRIDE must be a positive integer when set; got: ${STRIDE}" >&2
+  exit 1
+fi
 
 run_infer() {
   local name="$1"
@@ -182,11 +190,15 @@ run_infer() {
     prediction_args+=(--rot270)
   fi
 
+  if [[ -n "${STRIDE}" ]]; then
+    prediction_args+=(--stride "${STRIDE}")
+  fi
+
   mkdir -p "${output_dir}"
 
   echo "============================================================"
   echo "[Infer] ${name}: use_scene_condition=${use_scene}"
-  echo "GPU=${GPU}, tile_size=${TILE_SIZE}, tile_overlap=${TILE_OVERLAP}, vflip=${VFLIP}, hflip=${HFLIP}, rot90=${ROT90}, rot180=${ROT180}, rot270=${ROT270}"
+  echo "GPU=${GPU}, tile_size=${TILE_SIZE}, tile_overlap=${TILE_OVERLAP}, stride=${STRIDE:-auto}, scale=${SCALE}, vflip=${VFLIP}, hflip=${HFLIP}, rot90=${ROT90}, rot180=${ROT180}, rot270=${ROT270}"
   echo "Weights: ${weights}"
   if [[ "${INFER_VALIDATION}" == "1" ]]; then
     echo "Validation data: ${DATA_PATH}"
@@ -207,6 +219,7 @@ run_infer() {
     --device cuda:0 \
     --tile-size "${TILE_SIZE}" \
     --tile-overlap "${TILE_OVERLAP}" \
+    --scale "${SCALE}" \
     "${source_args[@]}" \
     "${scene_args[@]}" \
     "${prediction_args[@]}" \

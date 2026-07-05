@@ -46,6 +46,8 @@ HISTORY_FIELDS = [
     "num_images",
     "tile_size",
     "tile_overlap",
+    "stride",
+    "scale",
     "vflip",
     "hflip",
     "rot90",
@@ -66,6 +68,16 @@ DEFAULT_SUBMISSION_INFO = (
     "Extra Data [1] / No Extra Data [0] : 0\r\n"
     "Other description : MSDT baseline\r\n"
 )
+
+
+def parse_scales(text: str) -> list[float]:
+    parts = [part.strip() for part in text.split(",") if part.strip()]
+    if not parts:
+        raise ValueError("--scale must contain at least one positive value")
+    scales = [float(part) for part in parts]
+    if any(value <= 0 for value in scales):
+        raise ValueError(f"--scale values must be positive, got: {text}")
+    return scales
 
 
 def load_rgb(path: Path) -> torch.Tensor:
@@ -161,6 +173,8 @@ def main():
     parser.add_argument("--device")
     parser.add_argument("--tile-size", type=int)
     parser.add_argument("--tile-overlap", type=int)
+    parser.add_argument("--stride", type=int, help="Explicit tile stride; overrides tile-overlap when set")
+    parser.add_argument("--scale", default="1", help="Comma-separated inference scales, e.g. 1 or 1,0.75")
     parser.add_argument("--vflip", action="store_true", help="Average original and vertically flipped predictions")
     parser.add_argument("--hflip", action="store_true", help="Average original and horizontally flipped predictions")
     parser.add_argument("--rot90", action="store_true", help="Average original and 90-degree rotated predictions")
@@ -186,6 +200,9 @@ def main():
     inference = config.get("inference", {})
     tile_size = args.tile_size if args.tile_size is not None else int(inference.get("tile_size", 0))
     overlap = args.tile_overlap if args.tile_overlap is not None else int(inference.get("tile_overlap", 32))
+    scales = parse_scales(args.scale)
+    if args.stride is not None and args.stride <= 0:
+        raise ValueError("--stride must be a positive integer")
 
     jobs = []
     if args.validation:
@@ -248,6 +265,8 @@ def main():
                 scene_id=scene_id,
                 tile_size=tile_size,
                 tile_overlap=overlap,
+                tile_stride=args.stride,
+                scales=scales,
                 vflip=args.vflip,
                 hflip=args.hflip,
                 rot90=args.rot90,
@@ -293,6 +312,8 @@ def main():
                 "num_images": len(jobs),
                 "tile_size": tile_size,
                 "tile_overlap": overlap,
+                "stride": "" if args.stride is None else args.stride,
+                "scale": args.scale,
                 "vflip": int(args.vflip),
                 "hflip": int(args.hflip),
                 "rot90": int(args.rot90),

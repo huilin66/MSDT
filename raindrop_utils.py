@@ -179,7 +179,9 @@ def infer_image(
     scene_id: Optional[torch.Tensor] = None,
     tile_size: int = 0,
     tile_overlap: int = 32,
+    tile_stride: Optional[int] = None,
     multiple: int = 4,
+    scales: Sequence[float] = (1.0,),
     vflip: bool = False,
     hflip: bool = False,
     rot90: bool = False,
@@ -188,6 +190,11 @@ def infer_image(
 ) -> torch.Tensor:
     if image.ndim != 4 or image.shape[0] != 1:
         raise ValueError(f"Inference expects BCHW with batch size 1, got {tuple(image.shape)}")
+    scale_values = tuple(float(value) for value in scales)
+    if not scale_values:
+        raise ValueError("scales must contain at least one value")
+    if any(value <= 0 for value in scale_values):
+        raise ValueError(f"scales must be positive, got {scale_values}")
 
     def infer_once(input_image: torch.Tensor) -> torch.Tensor:
         padded, original_size = pad_to_multiple(input_image, multiple)
@@ -199,13 +206,18 @@ def infer_image(
         else:
             if tile_size % multiple:
                 raise ValueError(f"tile_size must be divisible by {multiple}")
-            if tile_overlap < 0 or tile_overlap >= tile_size:
-                raise ValueError("tile_overlap must be >= 0 and smaller than tile_size")
+            if tile_stride is None:
+                if tile_overlap < 0 or tile_overlap >= tile_size:
+                    raise ValueError("tile_overlap must be >= 0 and smaller than tile_size")
+                stride = tile_size - tile_overlap
+            else:
+                if tile_stride <= 0 or tile_stride > tile_size:
+                    raise ValueError("tile_stride must be > 0 and <= tile_size")
+                stride = tile_stride
             if tile_size > height or tile_size > width:
                 extra_bottom, extra_right = max(0, tile_size - height), max(0, tile_size - width)
                 padded = _reflect_pad(padded, extra_right, extra_bottom)
                 height, width = padded.shape[-2:]
-            stride = tile_size - tile_overlap
             ys = list(range(0, max(1, height - tile_size + 1), stride))
             xs = list(range(0, max(1, width - tile_size + 1), stride))
             if ys[-1] != height - tile_size:
@@ -226,17 +238,40 @@ def infer_image(
             restored_once = accumulation / weights.clamp_min(1e-6)
         return restored_once[:, :, :original_size[0], :original_size[1]]
 
-    predictions = [infer_once(image)]
+    def infer_scaled(input_image: torch.Tensor, scale: float) -> torch.Tensor:
+        if math.isclose(scale, 1.0):
+            return infer_once(input_image)
+        height, width = input_image.shape[-2:]
+        scaled_size = (max(2, round(height * scale)), max(2, round(width * scale)))
+        scaled = F.interpolate(input_image, size=scaled_size, mode="bilinear", align_corners=False)
+        restored_scaled = infer_once(scaled)
+        return F.interpolate(restored_scaled, size=(height, width), mode="bilinear", align_corners=False)
+
+    transforms = [(lambda value: value, lambda value: value)]
     if vflip:
-        predictions.append(infer_once(image.flip(2)).flip(2))
+        transforms.append((lambda value: value.flip(2), lambda value: value.flip(2)))
     if hflip:
-        predictions.append(infer_once(image.flip(3)).flip(3))
+        transforms.append((lambda value: value.flip(3), lambda value: value.flip(3)))
     if rot90:
-        predictions.append(torch.rot90(infer_once(torch.rot90(image, 1, (2, 3))), -1, (2, 3)))
+        transforms.append((
+            lambda value: torch.rot90(value, 1, (2, 3)),
+            lambda value: torch.rot90(value, -1, (2, 3)),
+        ))
     if rot180:
-        predictions.append(torch.rot90(infer_once(torch.rot90(image, 2, (2, 3))), -2, (2, 3)))
+        transforms.append((
+            lambda value: torch.rot90(value, 2, (2, 3)),
+            lambda value: torch.rot90(value, -2, (2, 3)),
+        ))
     if rot270:
-        predictions.append(torch.rot90(infer_once(torch.rot90(image, 3, (2, 3))), -3, (2, 3)))
+        transforms.append((
+            lambda value: torch.rot90(value, 3, (2, 3)),
+            lambda value: torch.rot90(value, -3, (2, 3)),
+        ))
+
+    predictions = []
+    for scale in scale_values:
+        for apply_transform, invert_transform in transforms:
+            predictions.append(invert_transform(infer_scaled(apply_transform(image), scale)))
     restored = torch.stack(predictions, dim=0).mean(dim=0).clamp(0.0, 1.0)
     if not torch.isfinite(restored).all() or restored.min() < 0 or restored.max() > 1:
         raise FloatingPointError("Final inference output failed finite/range checks")
