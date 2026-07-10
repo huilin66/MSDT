@@ -20,13 +20,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GPU=${GPU:-0}
-RUN_MODE=${RUN_MODE:-no_scene}
+RUN_MODE=${RUN_MODE:-scene}
 
 DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn}
-SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/Drop_scen_pred.json}
+SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/test_pred_v1.json}
 
 CKPT_ROOT=${CKPT_ROOT:-checkpoints/msdt_1x5090}
-CKPT_TYPE=${CKPT_TYPE:-last}
+CKPT_TYPE=${CKPT_TYPE:-best}
 case "${CKPT_TYPE}" in
   best)
     DEFAULT_CKPT_NAME="model_best.pth"
@@ -42,7 +42,7 @@ esac
 NO_SCENE_WEIGHTS=${NO_SCENE_WEIGHTS:-${CKPT_ROOT}/no_scene/${DEFAULT_CKPT_NAME}}
 SCENE_WEIGHTS=${SCENE_WEIGHTS:-${CKPT_ROOT}/scene/${DEFAULT_CKPT_NAME}}
 
-INPUT_PATH=${INPUT_PATH:-${DATA_PATH}/Drop}
+INPUT_PATH=${INPUT_PATH:-${DATA_PATH}/test-input}
 OUT_ROOT=${OUT_ROOT:-results/msdt_1x5090_infer}
 INFER_VALIDATION=${INFER_VALIDATION:-0}
 
@@ -64,10 +64,10 @@ TILE_OVERLAP=${TILE_OVERLAP:-16}
 STRIDE=${STRIDE:-}
 SCALE=${SCALE:-1}
 VFLIP=${VFLIP:-1}
-HFLIP=${HFLIP:-0}
+HFLIP=${HFLIP:-1}
 ROT90=${ROT90:-1}
-ROT180=${ROT180:-0}
-ROT270=${ROT270:-0}
+ROT180=${ROT180:-1}
+ROT270=${ROT270:-1}
 
 # For scene-conditioned single-image/folder inference:
 # - set SCENE_ID=0/1/2/3 to force one label for all inputs, or
