@@ -36,6 +36,7 @@ def parse_args():
     parser.add_argument("--scene-json")
     parser.add_argument("--output-dir")
     parser.add_argument("--resume", help="Resume a complete training checkpoint")
+    parser.add_argument("--load-weights", help="Load model weights only and start a fresh finetune run")
     parser.add_argument("--device", help="e.g. cuda, cuda:1, or cpu")
     parser.add_argument("--epochs", type=int, help="Override epochs (primarily for smoke tests)")
     parser.add_argument(
@@ -48,6 +49,11 @@ def parse_args():
     parser.add_argument("--lr", type=float, help="Override Adam learning rate")
     parser.add_argument("--max-train-steps", type=int, help="Limit train steps per epoch for smoke tests")
     parser.add_argument("--max-val-images", type=int, help="Limit validation images for smoke tests")
+    parser.add_argument("--eval-every", type=int, help="Run validation every N epochs; always validates the final epoch")
+    parser.add_argument("--save-every", type=int, help="Save model_latest every N epochs; always saves the final epoch")
+    parser.add_argument("--channels-last", action="store_true", help="Use channels-last memory format on CUDA")
+    parser.add_argument("--compile", action="store_true", help="Wrap the model with torch.compile")
+    parser.add_argument("--compile-mode", default="default", help="torch.compile mode, e.g. default or reduce-overhead")
     return parser.parse_args()
 
 
@@ -99,8 +105,14 @@ def main():
         raise ValueError("--max-train-steps must be > 0")
     if args.max_val_images is not None and args.max_val_images <= 0:
         raise ValueError("--max-val-images must be > 0")
+    if args.eval_every is not None and args.eval_every <= 0:
+        raise ValueError("--eval-every must be > 0")
+    if args.save_every is not None and args.save_every <= 0:
+        raise ValueError("--save-every must be > 0")
+    if args.resume and args.load_weights:
+        raise ValueError("--resume and --load-weights are mutually exclusive")
     seed = int(config["training"].get("seed", 1234))
-    set_seed(seed)
+    set_seed(seed, deterministic=bool(config["training"].get("deterministic", True)))
     device = resolve_device(args.device)
     use_scene = bool(config["experiment"]["use_scene_condition"])
     output_dir = Path(args.output_dir or config["experiment"]["output_dir"])
@@ -114,25 +126,36 @@ def main():
     print(json.dumps({"device": str(device), **data_info}, ensure_ascii=False))
     generator = torch.Generator().manual_seed(seed)
     workers = int(config["data"].get("num_workers", 0))
+    loader_kwargs = {
+        "num_workers": workers,
+        "pin_memory": device.type == "cuda",
+    }
+    if workers > 0:
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = int(config["data"].get("prefetch_factor", 2))
     train_loader = DataLoader(
         train_dataset,
         batch_size=int(config["training"].get("batch_size", 1)),
         shuffle=True,
-        num_workers=workers,
-        pin_memory=device.type == "cuda",
         worker_init_fn=_worker_seed,
         generator=generator,
         drop_last=False,
+        **loader_kwargs,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=1,
         shuffle=False,
-        num_workers=workers,
-        pin_memory=device.type == "cuda",
+        **loader_kwargs,
     )
 
     model = build_model(config).to(device)
+    channels_last = bool(args.channels_last or config["training"].get("channels_last", False))
+    if channels_last and device.type == "cuda":
+        model = model.to(memory_format=torch.channels_last)
+    compile_model = bool(args.compile or config["training"].get("compile", False))
+    if compile_model:
+        model = torch.compile(model, mode=args.compile_mode)
     optimizer_config = config["optimizer"]
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -173,8 +196,13 @@ def main():
         edge_weight=float(config["loss"].get("edge_weight", 0.05)),
     ).to(device)
     metrics = ValidationMetrics(device)
+    eval_every = args.eval_every or int(config["training"].get("eval_every", 1))
+    save_every = args.save_every or int(config["training"].get("save_every", 1))
 
     start_epoch, best_score = 1, float("-inf")
+    if args.load_weights:
+        load_model_checkpoint(model, args.load_weights, device, use_scene)
+        print(f"Loaded model weights from {args.load_weights}; optimizer and scheduler start fresh")
     if args.resume:
         checkpoint = load_model_checkpoint(model, args.resume, device, use_scene)
         for required in ("optimizer", "scheduler", "scaler", "epoch", "best_score"):
@@ -220,8 +248,12 @@ def main():
         for batch in tqdm(
             epoch_batches, total=epoch_step_limit, desc=f"train {epoch}/{epochs}"
         ):
-            target = batch["target"].to(device, non_blocking=True)
-            image = batch["input"].to(device, non_blocking=True)
+            if channels_last and device.type == "cuda":
+                target = batch["target"].to(device, non_blocking=True, memory_format=torch.channels_last)
+                image = batch["input"].to(device, non_blocking=True, memory_format=torch.channels_last)
+            else:
+                target = batch["target"].to(device, non_blocking=True)
+                image = batch["input"].to(device, non_blocking=True)
             scene_id = batch["scene_id"].to(device) if use_scene else None
             optimizer.zero_grad(set_to_none=True)
             with torch.amp.autocast(
@@ -265,15 +297,19 @@ def main():
             epoch_loss += float(loss.detach().cpu())
             train_steps += 1
 
-        validation = validate_model(
-            model,
-            val_loader,
-            metrics,
-            device,
-            use_scene,
-            tile_size=int(config.get("inference", {}).get("validation_tile_size", 0)),
-            tile_overlap=int(config.get("inference", {}).get("tile_overlap", 32)),
-        )
+        should_validate = (epoch == stop_after_epoch) or (epoch % eval_every == 0)
+        if should_validate:
+            validation = validate_model(
+                model,
+                val_loader,
+                metrics,
+                device,
+                use_scene,
+                tile_size=int(config.get("inference", {}).get("validation_tile_size", 0)),
+                tile_overlap=int(config.get("inference", {}).get("tile_overlap", 32)),
+            )
+        else:
+            validation = {"PSNR_Y": float("nan"), "SSIM_Y": float("nan"), "LPIPS": float("nan"), "Score": float("nan")}
         scheduler.step()
         row = {
             "epoch": epoch,
@@ -282,15 +318,17 @@ def main():
             **validation,
         }
         append_metrics_csv(output_dir / "metrics.csv", row)
-        is_best = validation["Score"] > best_score
+        is_best = should_validate and validation["Score"] > best_score
         if is_best:
             best_score = validation["Score"]
-        state = _checkpoint_state(
-            model, optimizer, scheduler, scaler, epoch, best_score, config, generator
-        )
-        torch.save(state, output_dir / "model_latest.pth")
-        if is_best:
-            torch.save(state, output_dir / "model_best.pth")
+        should_save = is_best or epoch == stop_after_epoch or epoch % save_every == 0
+        if should_save:
+            state = _checkpoint_state(
+                model, optimizer, scheduler, scaler, epoch, best_score, config, generator
+            )
+            torch.save(state, output_dir / "model_latest.pth")
+            if is_best:
+                torch.save(state, output_dir / "model_best.pth")
         log_payload = {
             **row,
             "best_score": best_score,

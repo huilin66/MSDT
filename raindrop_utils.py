@@ -38,6 +38,9 @@ def set_seed(seed: int, deterministic: bool = True) -> None:
     if deterministic:
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
+    else:
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
 
 
 def resolve_device(device: Optional[str] = None) -> torch.device:
@@ -58,12 +61,16 @@ def build_model(config: Dict[str, Any]) -> MSDT:
 
 
 def unwrap_model(model: torch.nn.Module) -> torch.nn.Module:
-    return model.module if hasattr(model, "module") else model
+    if hasattr(model, "module"):
+        model = model.module
+    if hasattr(model, "_orig_mod"):
+        model = model._orig_mod
+    return model
 
 
 def normalize_state_dict(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     return {
-        key[7:] if key.startswith("module.") else key: value
+        key.removeprefix("module.").removeprefix("_orig_mod."): value
         for key, value in state_dict.items()
     }
 
@@ -140,8 +147,12 @@ class MultiScaleMSDTLoss(torch.nn.Module):
                     f"Output/GT mismatch at scale {index}: {tuple(output.shape)} vs {tuple(scaled_target.shape)}"
                 )
         char = sum(self.charbonnier(output, gt) for output, gt in zip(outputs, targets))
-        fft = sum(self.fft(output, gt) for output, gt in zip(outputs, targets))
-        edge = sum(self.edge(output, gt) for output, gt in zip(outputs, targets))
+        fft = target.new_tensor(0.0)
+        edge = target.new_tensor(0.0)
+        if self.fft_weight > 0:
+            fft = sum(self.fft(output, gt) for output, gt in zip(outputs, targets))
+        if self.edge_weight > 0:
+            edge = sum(self.edge(output, gt) for output, gt in zip(outputs, targets))
         total = char + self.fft_weight * fft + self.edge_weight * edge
         return total, {"charbonnier": char.detach(), "fft": fft.detach(), "edge": edge.detach()}
 

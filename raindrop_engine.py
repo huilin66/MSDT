@@ -32,6 +32,7 @@ def prepare_datasets(
         use_scene_condition=use_scene,
         scene_json=labels_path,
         group_regex=data.get("group_regex", r"(?i)^(day|night)(?:raindrop)?(?:__|[_-])(\d+)"),
+        allow_unmatched_flat_groups=bool(data.get("allow_unmatched_flat_groups", False)),
     )
     split = load_or_create_split(
         samples,
@@ -94,4 +95,3 @@ def validate_model(
             totals[key] += current[key]
         count += image.shape[0]
     return aggregate_metrics(totals, count)
-

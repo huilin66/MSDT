@@ -1,0 +1,49 @@
+experiment:
+  name: MSDT no-scene pseudo finetune
+  use_scene_condition: false
+  output_dir: checkpoints/raindrop_no_scene_pseudo
+
+data:
+  root: data/RaindropClarity
+  format: flat
+  scene_json: null
+  split_manifest: splits/raindrop_no_scene_pseudo_split.json
+  group_regex: '(?i)^(day|night)(?:raindrop)?(?:__|[_-])(\d+)'
+  allow_unmatched_flat_groups: true
+  val_ratio: 0.1
+  patch_size: 256
+  num_workers: 8
+  prefetch_factor: 4
+
+model:
+  num_res: 8
+  scene_embedding_dim: 32
+
+training:
+  epochs: 80
+  batch_size: 4
+  seed: 1234
+  deterministic: false
+  channels_last: true
+  compile: false
+  amp: true
+  amp_dtype: bfloat16
+  eval_every: 10
+  save_every: 5
+
+optimizer:
+  name: Adam
+  lr: 0.00005
+  min_lr: 0.000001
+  betas: [0.9, 0.999]
+  eps: 0.00000001
+  weight_decay: 0.0
+
+loss:
+  fft_weight: 0.01
+  edge_weight: 0.05
+
+inference:
+  tile_size: 0
+  validation_tile_size: 0
+  tile_overlap: 32

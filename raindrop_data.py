@@ -39,9 +39,11 @@ def _image_files(directory: Path) -> Dict[str, Path]:
     }
 
 
-def _flat_group(filename: str, regex: str) -> str:
+def _flat_group(filename: str, regex: str, allow_unmatched: bool = False) -> str:
     match = re.match(regex, Path(filename).stem)
     if match is None:
+        if allow_unmatched:
+            return f"unmatched::{Path(filename).stem.lower()}"
         raise ValueError(
             f"Cannot parse a scene/triplet group from flat filename {filename!r}. "
             "Set data.group_regex to match the dataset naming convention."
@@ -76,6 +78,7 @@ def _discover_flat(
     use_scene_condition: bool,
     scene_json: Optional[Path],
     group_regex: str,
+    allow_unmatched_flat_groups: bool = False,
 ) -> List[RaindropSample]:
     drop_dir, clear_dir = root / "Drop", root / "Clear"
     inputs, targets = _image_files(drop_dir), _image_files(clear_dir)
@@ -94,7 +97,7 @@ def _discover_flat(
     return [
         RaindropSample(
             sample_id=name,
-            group_id=_flat_group(name, group_regex),
+            group_id=_flat_group(name, group_regex, allow_unmatched_flat_groups),
             filename=name,
             input_path=str(inputs[name]),
             target_path=str(targets[name]),
@@ -191,6 +194,7 @@ def discover_samples(
     use_scene_condition: bool = False,
     scene_json: Optional[str] = None,
     group_regex: str = DEFAULT_FLAT_GROUP_REGEX,
+    allow_unmatched_flat_groups: bool = False,
 ) -> Tuple[List[RaindropSample], str]:
     root = Path(data_root).expanduser().resolve()
     if not root.is_dir():
@@ -211,6 +215,7 @@ def discover_samples(
             use_scene_condition,
             Path(scene_json).expanduser().resolve() if scene_json else None,
             group_regex,
+            allow_unmatched_flat_groups,
         )
     else:
         samples = _discover_raw(root, use_scene_condition)
