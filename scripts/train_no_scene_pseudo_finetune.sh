@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GPU=${GPU:-0}
-DATA_PATH=${DATA_PATH:-/data/huilin/scrinvme/huilin/tp/eccv_dn/RainDrop_Train}
+DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn/RainDrop_Train}
 CONFIG=${CONFIG:-configs/raindrop_no_scene_pseudo.yaml}
 LOAD_WEIGHTS=${LOAD_WEIGHTS:-checkpoints/msdt_1x5090/no_scene/model_best.pth}
 OUT_ROOT=${OUT_ROOT:-checkpoints/msdt_no_scene_pseudo_1x5090}

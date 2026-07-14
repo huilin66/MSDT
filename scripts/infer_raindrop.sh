@@ -25,7 +25,7 @@ RUN_MODE=${RUN_MODE:-scene}
 DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn}
 SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/test_pred_v1.json}
 
-CKPT_ROOT=${CKPT_ROOT:-checkpoints/msdt_1x5090}
+CKPT_ROOT=${CKPT_ROOT:-checkpoints/msdt_no_scene_pseudo_1x5090/no_scene_pseudo_ft}
 CKPT_TYPE=${CKPT_TYPE:-best}
 case "${CKPT_TYPE}" in
   best)
@@ -39,7 +39,7 @@ case "${CKPT_TYPE}" in
     exit 1
     ;;
 esac
-NO_SCENE_WEIGHTS=${NO_SCENE_WEIGHTS:-${CKPT_ROOT}/no_scene/${DEFAULT_CKPT_NAME}}
+NO_SCENE_WEIGHTS=${NO_SCENE_WEIGHTS:-${CKPT_ROOT}/${DEFAULT_CKPT_NAME}}
 SCENE_WEIGHTS=${SCENE_WEIGHTS:-${CKPT_ROOT}/scene/${DEFAULT_CKPT_NAME}}
 
 INPUT_PATH=${INPUT_PATH:-${DATA_PATH}/test-input}
@@ -64,10 +64,10 @@ TILE_OVERLAP=${TILE_OVERLAP:-16}
 STRIDE=${STRIDE:-}
 SCALE=${SCALE:-1}
 VFLIP=${VFLIP:-1}
-HFLIP=${HFLIP:-1}
+HFLIP=${HFLIP:-0}
 ROT90=${ROT90:-1}
-ROT180=${ROT180:-1}
-ROT270=${ROT270:-1}
+ROT180=${ROT180:-0}
+ROT270=${ROT270:-0}
 
 # For scene-conditioned single-image/folder inference:
 # - set SCENE_ID=0/1/2/3 to force one label for all inputs, or
