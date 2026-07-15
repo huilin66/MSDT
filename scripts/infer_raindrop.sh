@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GPU=${GPU:-0}
-RUN_MODE=${RUN_MODE:-scene}
+RUN_MODE=${RUN_MODE:-no_scene}
 
 DATA_PATH=${DATA_PATH:-D:/zhl/data/eccv_dn}
 SCENE_JSON=${SCENE_JSON:-${DATA_PATH}/test_pred_v1.json}
@@ -67,7 +67,7 @@ VFLIP=${VFLIP:-1}
 HFLIP=${HFLIP:-0}
 ROT90=${ROT90:-1}
 ROT180=${ROT180:-0}
-ROT270=${ROT270:-0}
+ROT270=${ROT270:-1}
 
 # For scene-conditioned single-image/folder inference:
 # - set SCENE_ID=0/1/2/3 to force one label for all inputs, or
